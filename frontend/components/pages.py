@@ -156,7 +156,7 @@ asset_popup_tab = solara.reactive("부대 기본자산")
 
 ### 현재시간 나타내기
 # 시뮬레이션 기준 시작 시각
-sim_base_time = datetime(2023, 7, 26, 15, 0, 0)
+sim_base_time = datetime(2023, 7, 27, 3, 0, 0)
 # 앱이 시작된 실제 시각 (웹 서버/커널 켜진 시점)
 app_start_ts = time.time()
 # 단순 리렌더 유도용 tick
@@ -1739,7 +1739,11 @@ def CommanderPage():
 
                             # 도착 예정 시각 (기존 로직 유지)
                             with solara.Div(classes=["col-time"]):
-                                if row["unit"] == "3제대" and active_btn.value in ["균형", "정밀"]:
+                                if (
+                                    (active_btn.value == "균형" and row["unit"] == "3제대")
+                                    or
+                                    (active_btn.value == "정밀" and row["unit"] == "1제대")
+                                ):
                                     solara.Text(
                                         row["arrive"],
                                         style={
@@ -1822,8 +1826,8 @@ def CommanderPage():
                                 "display": "flex",
                                 "align-items": "baseline",
                                 "justify-content": "space-between",
-                                "padding": "0 0 8px 0",
-                                "margin-bottom": "7px" if not is_last else "0px",
+                                "padding": "4px 0 6px 0",
+                                "margin-bottom": "8px" if not is_last else "0px",
                                 "border-bottom": "none" if is_last else "1px solid rgba(71, 85, 105, 0.25)",
                             }):
                                 # 왼쪽 라벨
@@ -2615,6 +2619,62 @@ def UserPage():
         .ltwr-scroll-area::-webkit-scrollbar-thumb:hover {
             background: rgba(203, 213, 225, 0.55);
         }
+        .asset-form-label {
+            color: #d1d5db !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
+            line-height: 1 !important;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+        .asset-form-row input {
+            color: #f8fafc !important;
+        }
+
+        .asset-form-row input::placeholder {
+            color: #94a3b8 !important;
+        }
+        .asset-form-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 44px;
+            width: 100%;
+        }
+        .asset-form-card .v-input {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            flex: 0 0 120px !important;
+            min-width: 120px !important;
+        }
+        .asset-form-card {
+            background: rgba(30, 41, 59, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            border-radius: 14px;
+            padding: 4px 20px;
+            min-height: 100%;
+            display: flex; flex-direction: column;
+            justify-content: flex-start; gap: 1px;
+        }
+
+        .asset-form-card .v-input__slot,
+        .asset-form-card .v-text-field .v-input__control .v-input__slot {
+            min-height: 36px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            padding: 0 10px !important;
+        }
+
+        .asset-form-card input {
+            color: white !important;
+            -webkit-text-fill-color: white !important;
+            text-align: right !important;
+        }
     """)
     
     
@@ -2768,13 +2828,14 @@ def UserPage():
                 "min-height": "0",
                 "min-width": "0",
             }):
-                with solara.Div(style={
+                with solara.Div(classes=["right-sidebar-inner"], style={
                     "width": "100%",
                     "height": "100%",
                     "display": "flex",
                     "flex-direction": "column",
                     "gap": "5px",
                     "min-height": "0",
+                    "min-width": "0",
                 }):
                     # 우측 상단 임무 요약
                     with solara.Div(classes=["right-top-panel"], style={
@@ -2876,7 +2937,16 @@ def UserPage():
                                                     ],
                                                 )
 
-                                        with solara.Div(classes=["asset-tab-content"]):
+                                        with solara.Div(
+                                            classes=["asset-tab-content"],
+                                            style={
+                                                "color": "#ffffff",
+                                                "width": "100%",
+                                                "min-width": "0",
+                                                "display": "flex",
+                                                "flex-direction": "column",
+                                            }
+                                        ):
                                             if asset_tab == "부대 기본자산":
                                                 BaseAssetEditor()
                                             else:
@@ -3315,8 +3385,8 @@ def LoadingPage():
                 tag="div",
                 unsafe_innerHTML=(
                     "<div class='loading-caption'>"
-                    "지휘관이 입력한 목적지 데이터로 시뮬레이션을 수행하고 있습니다.<br>"
-                    "현재는 백엔드 미연동 상태이므로, 버튼으로 다음 단계로 이동합니다."
+                    #"지휘관이 입력한 목적지 데이터로 시뮬레이션을 수행하고 있습니다.<br>"
+                    #"현재는 백엔드 미연동 상태이므로, 버튼으로 다음 단계로 이동합니다."
                     "</div>"
                 ),
             )

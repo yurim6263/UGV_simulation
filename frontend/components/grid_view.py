@@ -288,9 +288,9 @@ def GridView(current_user="admin"):
             import os
 
             mode_html_map = {
-                "균형": "animated_gar_overlay_with_paths_persistent_alerts_balance.html",
-                "정밀": "animated_gar_overlay_with_paths_persistent_alerts_explore.html",
-                "신속": "animated_gar_overlay_with_paths_persistent_alerts_rush.html",
+                "균형": "animated_gar_overlay_with_paths_persistent_alerts_balance_14.html",
+                "정밀": "animated_gar_overlay_with_paths_persistent_alerts_explore_14.html",
+                "신속": "animated_gar_overlay_with_paths_persistent_alerts_rush_14.html",
             }
 
             selected_mode = selected_mission_mode.value
