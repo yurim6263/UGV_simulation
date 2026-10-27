@@ -7,6 +7,7 @@ from app.db.models.route import RunKpi, RunMapLayer, RunRecommendation, RunRoute
 from app.db.models.run_asset_status import RunAssetStatus
 from app.db.models.simulation_run import SimulationRun
 from app.db.models.snapshot import RunStatusSnapshot, RunTimeSeriesPanel
+from app.db.models.track import RunTrack
 from app.db.models.unit_state import RunQueueEvent, RunSosEvent, RunUnit
 from app.db.models.refresh_token import RefreshToken
 from app.db.models.user import User
@@ -34,4 +35,5 @@ __all__ = [
     "RunRouteEffect",
     "RunSosEvent",
     "RunAssetStatus",
+    "RunTrack",
 ]

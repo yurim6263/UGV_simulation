@@ -43,10 +43,8 @@ async def _ltwr_hourly_scanner():
     from app.api.ltwr import scan_ltwr_dir
     while True:
         try:
-            now = asyncio.get_event_loop().time()
             # 다음 정시까지 대기
             import time as _time
-            import math
             secs = 3600 - (_time.time() % 3600)
             await asyncio.sleep(secs)
             scan_ltwr_dir()
@@ -125,6 +123,7 @@ from app.api import tactical_map  # 신규: 전술 맵 API
 from app.api import operators      # 신규: 통제관 브리핑 API
 from app.api import sim_map        # 신규: 시뮬레이션 결과 HTML 맵
 from app.api import sim_video      # 신규: 시뮬레이션 결과 영상 API
+from app.api import replay         # 신규: 이동 기록 재생 데이터 API
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(missions.router, prefix="/api")
@@ -137,6 +136,7 @@ app.include_router(tactical_map.router, prefix="/api")  # 신규: /api/runs/{id}
 app.include_router(operators.router, prefix="/api")     # 신규: /api/operators/*
 app.include_router(sim_map.router, prefix="/api")       # 신규: /api/map/sim/*
 app.include_router(sim_video.router, prefix="/api")     # 신규: /api/map/video/*
+app.include_router(replay.router, prefix="/api")        # 신규: /api/runs/{id}/replay
 
 # LTWR HTML 정적 파일 서빙 (/ltwr-maps/T0.html 등)
 _LTWR_DIR.mkdir(parents=True, exist_ok=True)

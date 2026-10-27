@@ -51,10 +51,12 @@ async def start_run(
     run_id: int, db: DBSession, user: CurrentUser, background_tasks: BackgroundTasks
 ):
     svc = SimulationService(db)
-    run = await svc.start_run(run_id, background_tasks)
-    if run is None:
+    existing = await svc.get_run(run_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
-    return run
+    if existing.status != "CREATED":       # 이미 시작/종료된 run 을 다시 시작하면 기록이 중복된다
+        raise HTTPException(status_code=409, detail=f"이미 {existing.status} 상태인 run 입니다.")
+    return await svc.start_run(run_id, background_tasks)
 
 
 @router.post(

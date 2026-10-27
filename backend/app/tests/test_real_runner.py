@@ -1,0 +1,186 @@
+"""
+backend/app/tests/test_real_runner.py
+
+엔진 기반 시뮬레이션 실행 → DB 기록 → KPI → 재생 API 통합 테스트.
+작은 임무(UGV 2대, 목표 1곳, 6턴)로 실행해 시간을 줄였다.
+"""
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import func, select
+
+from app.db.models.patrol import RunPatrolEvent
+from app.db.models.route import RunKpi, RunRecommendation, RunRoute, RunRouteEffect
+from app.db.models.simulation_run import SimulationRun
+from app.db.models.snapshot import RunStatusSnapshot
+from app.db.models.track import RunTrack
+from app.db.models.unit_state import RunUnit
+from app.db.session import AsyncSessionLocal
+from app.simulation.real_runner import build_scenario, even_split, run_real
+
+MISSION = {
+    "name": "엔진 통합 테스트",
+    "total_ugv": 2,
+    "max_ugv_count": 2,
+    "mission_duration_min": 60,          # 6턴
+    "departure_lat": 54.48,
+    "departure_lon": 18.32,
+}
+
+
+@pytest.fixture(autouse=True)
+def _fast_clear_weather(monkeypatch):
+    monkeypatch.setenv("SIM_TICK_SLEEP", "0")
+    monkeypatch.setenv("SIM_WEATHER_SCALE", "clear")
+
+
+async def _make_run(c: AsyncClient) -> int:
+    mid = (await c.post("/api/missions", json=MISSION)).json()["id"]
+    targets = await c.post(f"/api/missions/{mid}/targets", json=[{"seq": 1, "lat": 54.45, "lon": 18.40, "patrol_duration_sec": 600}])
+    assert targets.status_code == 201, targets.text
+    return (await c.post(f"/api/missions/{mid}/runs")).json()["id"]
+
+
+async def _count(model, run_id: int) -> int:
+    async with AsyncSessionLocal() as db:
+        return (await db.execute(select(func.count()).select_from(model).where(model.run_id == run_id))).scalar_one()
+
+
+# ── 시나리오 구성 (DB 불필요) ────────────────────────────────────────────
+
+def test_even_split_distributes_all_ugvs():
+    assert even_split(9, 3) == (3, 3, 3)
+    assert even_split(13, 3) == (5, 4, 4)
+    assert sum(even_split(7, 2)) == 7
+
+
+def test_scenario_uses_one_team_per_target_and_the_preset_formation_when_it_matches():
+    base = {"departure_lat": 54.48, "departure_lon": 18.32, "duration_min": 240}
+    three = [(54.40, 18.54), (54.33, 18.36), (54.37, 18.50)]
+    spec, _ = build_scenario({**base, "total_ugv": 9, "targets": three}, "balance", 0.3)
+    assert spec.formation == (3, 4, 2) and len(spec.pois) == 3        # 프리셋 편성
+    spec, _ = build_scenario({**base, "total_ugv": 5, "targets": three[:2]}, "rush", 0.3)
+    assert spec.formation == (3, 2) and spec.assignment == (0, 1)     # 균등 분배
+    spec, _ = build_scenario({**base, "total_ugv": 4, "targets": []}, "explore", 0.3)
+    assert len(spec.pois) == 3 and spec.formation == (2, 1, 1)         # 목표가 없으면 기본 정찰지 3곳
+
+
+def test_scenario_turn_limit_follows_the_mission_duration():
+    base = {"departure_lat": 54.48, "departure_lon": 18.32, "total_ugv": 2, "targets": [(54.45, 18.40)]}
+    assert build_scenario({**base, "duration_min": 60}, "balance", 0.3)[0].max_turns == 6
+    assert build_scenario({**base, "duration_min": 10_000}, "balance", 0.3)[0].max_turns == 31   # 실황 데이터 범위
+
+
+# ── 실행 ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_run_produces_real_records_and_kpis(auth_client: AsyncClient):
+    run_id = await _make_run(auth_client)
+    started = await auth_client.post(f"/api/runs/{run_id}/start")
+    assert started.status_code == 200
+
+    async with AsyncSessionLocal() as db:
+        run = await db.get(SimulationRun, run_id)
+        assert run.status == "COMPLETED" and run.progress_pct == 100
+
+    assert await _count(RunTrack, run_id) > 20                 # 이동 기록이 쌓였다
+    assert await _count(RunStatusSnapshot, run_id) >= 1
+    assert await _count(RunUnit, run_id) == 2                  # UGV 2대
+    assert await _count(RunKpi, run_id) == 1
+    assert await _count(RunRouteEffect, run_id) == 1
+    assert await _count(RunRecommendation, run_id) == 1
+    assert await _count(RunRoute, run_id) == 2
+
+    async with AsyncSessionLocal() as db:
+        kpi = (await db.execute(select(RunKpi).where(RunKpi.run_id == run_id))).scalar_one()
+        effect = (await db.execute(select(RunRouteEffect).where(RunRouteEffect.run_id == run_id))).scalar_one()
+    assert 0.0 <= kpi.success_rate <= 100.0
+    assert kpi.makespan_sec % 600 == 0                          # 턴 단위
+    assert {"v1_coverage", "v2_minutes", "v3_overload_minutes"} <= set(kpi.queue_kpi)
+    assert effect.success_rate_delta == pytest.approx(effect.optimal_success_rate - effect.alt_success_rate)
+
+
+@pytest.mark.asyncio
+async def test_kpis_are_deterministic_for_the_same_run_id_not_random(auth_client: AsyncClient):
+    """예전 real_runner 는 성공률을 `40 + tick*3.5 + random` 으로 만들었다. 이제 엔진 결과만 쓴다."""
+    run_id = await _make_run(auth_client)
+    await auth_client.post(f"/api/runs/{run_id}/start")
+    async with AsyncSessionLocal() as db:
+        first = (await db.execute(select(RunKpi).where(RunKpi.run_id == run_id))).scalar_one().success_rate
+    tracks = await _count(RunTrack, run_id)
+    # 같은 run 을 다시 실행해도(시드 = run_id) 같은 결과이고, 이전 산출물이 쌓여 중복되지 않아야 한다
+    await run_real(run_id)
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(select(RunKpi).where(RunKpi.run_id == run_id))).scalars().all()
+    assert len(rows) == 1 and rows[0].success_rate == first
+    assert await _count(RunTrack, run_id) == tracks
+
+
+@pytest.mark.asyncio
+async def test_cancelled_run_stops_without_finalizing(auth_client: AsyncClient):
+    run_id = await _make_run(auth_client)
+    assert (await auth_client.post(f"/api/runs/{run_id}/cancel")).status_code == 200
+    await run_real(run_id)                                     # 취소된 run 은 스트리밍/KPI 확정 없이 멈춘다
+    assert await _count(RunKpi, run_id) == 0
+    assert await _count(RunStatusSnapshot, run_id) == 0
+    async with AsyncSessionLocal() as db:
+        assert (await db.get(SimulationRun, run_id)).status == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_out_of_domain_departure_fails_loudly(auth_client: AsyncClient):
+    seoul = {**MISSION, "departure_lat": 37.5, "departure_lon": 127.0}
+    mid = (await auth_client.post("/api/missions", json=seoul)).json()["id"]
+    run_id = (await auth_client.post(f"/api/missions/{mid}/runs")).json()["id"]
+    await auth_client.post(f"/api/runs/{run_id}/start")        # orchestrator 가 실패를 잡아 FAILED 로 표시
+    async with AsyncSessionLocal() as db:
+        assert (await db.get(SimulationRun, run_id)).status == "FAILED"
+
+
+# ── 재생 API ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_replay_endpoint_returns_the_frontend_format(auth_client: AsyncClient):
+    run_id = await _make_run(auth_client)
+    await auth_client.post(f"/api/runs/{run_id}/start")
+    resp = await auth_client.get(f"/api/runs/{run_id}/replay")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    mode = body["mode"]
+    assert {"agents", "actions", "columns", "steps", "kpi"} <= set(mode)
+    assert len(mode["steps"]) == await _count(RunTrack, run_id)
+    assert body["scenario"]["bounds"][0][0] < body["scenario"]["bounds"][1][0]
+    assert body["scenario"]["pois"][0]["id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_replay_is_404_before_a_run_has_records(auth_client: AsyncClient):
+    run_id = await _make_run(auth_client)
+    assert (await auth_client.get(f"/api/runs/{run_id}/replay")).status_code == 404
+    assert (await auth_client.get("/api/runs/99999/replay")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_starting_a_run_twice_is_rejected(auth_client: AsyncClient):
+    run_id = await _make_run(auth_client)
+    assert (await auth_client.post(f"/api/runs/{run_id}/start")).status_code == 200
+    again = await auth_client.post(f"/api/runs/{run_id}/start")
+    assert again.status_code == 409
+    assert await _count(RunKpi, run_id) == 1                   # 두 번째 시작이 기록을 중복시키지 않았다
+
+
+@pytest.mark.asyncio
+async def test_arrival_starts_the_patrol_countdown_with_the_mission_patrol_time(auth_client: AsyncClient):
+    run_id = await _make_run(auth_client)                      # 목표의 정찰 시간 600초
+    await auth_client.post(f"/api/runs/{run_id}/start")
+    async with AsyncSessionLocal() as db:
+        events = (await db.execute(select(RunPatrolEvent).where(RunPatrolEvent.run_id == run_id))).scalars().all()
+    assert events, "UGV 가 도착했다면 정찰 이벤트가 있어야 한다"
+    assert all(e.patrol_duration_sec == 600 and e.target_seq == 1 for e in events)
+
+
+def test_scenario_converts_patrol_seconds_to_turns():
+    base = {"departure_lat": 54.48, "departure_lon": 18.32, "total_ugv": 5, "duration_min": 240,
+            "targets": [(54.40, 18.54), (54.33, 18.36)], "patrol_sec": [1800, 601]}
+    spec, _ = build_scenario(base, "rush", 0.3)
+    assert spec.dwell_turns == (3, 2)                          # 1800초 = 3턴, 601초는 올림해 2턴
