@@ -16,13 +16,12 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DBSession, echelon_of, require_roles
+from app.api.deps import CurrentUser, DBSession, require_roles
 from app.analysis.sql_reports import mode_comparison, run_report
-from app.db.models.mission import Mission, MissionTarget
 from app.db.models.simulation_run import SimulationRun
-from app.db.models.track import RunTrack
-from app.simulation.presets import DEFAULT_POIS, DEFAULT_START
-from app.simulation.replay import MODES, TEAMS, build_mode, grid_bounds
+from app.services.run_data import RunDataError, build_run_mode, load_run_data
+from app.simulation.presets import DEFAULT_START
+from app.simulation.replay import MODES, grid_bounds
 
 router = APIRouter(tags=["replay"])
 
@@ -33,47 +32,23 @@ _MODE_OF = {"balanced": "balance", "recon": "explore", "rapid": "rush"}
 async def get_replay(run_id: int, db: DBSession, user: CurrentUser):
     from app.simulation.algo.sim_config import SimAlgoConfig   # 지형 파일은 이 API 를 쓸 때만 읽는다
 
-    run = await db.get(SimulationRun, run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
-    mission = await db.get(Mission, run.mission_id)
+    try:
+        data = await load_run_data(db, run_id, user)           # 통제관은 자기 제대의 기록만 받는다
+        mode_data, pois = await build_run_mode(db, data)
+    except RunDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    rows = (await db.execute(
-        select(RunTrack).where(RunTrack.run_id == run_id).order_by(RunTrack.seq_idx)
-    )).scalars().all()
-    if not rows:
-        raise HTTPException(status_code=404, detail="아직 저장된 이동 기록이 없습니다.")
-
-    df = pd.DataFrame([{
-        "seq_idx": r.seq_idx, "turn_idx": r.turn_idx, "agent_id": r.agent_id, "row": r.row, "col": r.col,
-        "lat": r.lat, "lon": r.lon, "action": r.action, "ap": r.ap, "risk_grade": r.grade or "G",
-        "normalized_c_total": r.total, "c_mob_prime": r.mob, "c_sen_prime": r.sen,
-    } for r in rows])
-
-    if user.role not in ("commander", "admin"):                 # 통제관은 자기 제대만
-        team = TEAMS[echelon_of(user) - 1]
-        df = df[df.agent_id.str.endswith(f"_{team}") | df.agent_id.str.contains(f"_{team}_")]
-        if df.empty:                       # 이 임무에는 해당 제대가 편성되지 않았다 (예: 목표 2곳인 임무의 3제대)
-            raise HTTPException(status_code=404, detail=f"이 임무에는 {team} 제대의 기록이 없습니다.")
-
-    targets = (await db.execute(
-        select(MissionTarget).where(MissionTarget.mission_id == mission.id).order_by(MissionTarget.seq)
-    )).scalars().all()
-    pois = [(t.lat, t.lon) for t in targets] or list(DEFAULT_POIS)
-    poi_cells = [SimAlgoConfig.latlon_to_grid(lat, lon) for lat, lon in pois]
-
-    mode = _MODE_OF.get(run.selected_mode or "balanced", "balance")
     meta = SimAlgoConfig.meta()
     return {
         "scenario": {
             "turn_minutes": 10,
-            "turns": int(df.turn_idx.max()) + 1,
+            "turns": int(data.frame.turn_idx.max()) + 1,
             "bounds": grid_bounds(meta.lat, meta.lon),
-            "start": [mission.departure_lat, mission.departure_lon] if mission else list(DEFAULT_START),
+            "start": [data.mission.departure_lat, data.mission.departure_lon] if data.mission else list(DEFAULT_START),
             "pois": [{"id": i + 1, "lat": p[0], "lon": p[1]} for i, p in enumerate(pois)],
-            "modes": [{"key": mode, "label": MODES[mode]}],
+            "modes": [{"key": data.mode_key, "label": MODES[data.mode_key]}],
         },
-        "mode": build_mode(df, mode, MODES[mode], poi_cells),
+        "mode": mode_data,
     }
 
 

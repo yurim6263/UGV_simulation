@@ -124,6 +124,7 @@ from app.api import operators      # 신규: 통제관 브리핑 API
 from app.api import sim_map        # 신규: 시뮬레이션 결과 HTML 맵
 from app.api import sim_video      # 신규: 시뮬레이션 결과 영상 API
 from app.api import replay         # 신규: 이동 기록 재생 데이터 API
+from app.api import assistant      # 신규: LLM 작전 어시스턴트 API
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(missions.router, prefix="/api")
@@ -137,6 +138,7 @@ app.include_router(operators.router, prefix="/api")     # 신규: /api/operators
 app.include_router(sim_map.router, prefix="/api")       # 신규: /api/map/sim/*
 app.include_router(sim_video.router, prefix="/api")     # 신규: /api/map/video/*
 app.include_router(replay.router, prefix="/api")        # 신규: /api/runs/{id}/replay
+app.include_router(assistant.router, prefix="/api")     # 신규: /api/assistant/*
 
 # LTWR HTML 정적 파일 서빙 (/ltwr-maps/T0.html 등)
 _LTWR_DIR.mkdir(parents=True, exist_ok=True)

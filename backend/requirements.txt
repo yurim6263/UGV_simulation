@@ -28,6 +28,9 @@ numpy>=1.26.0
 scipy>=1.12.0
 pymoo>=0.6.1       # NSGA-II 다목적 최적화
 
+# LLM 어시스턴트 (Gemini)
+google-genai>=1.0.0
+
 # 지형 PNG 생성 (Leaflet imageOverlay용)
 Pillow>=10.0.0
 
