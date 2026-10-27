@@ -16,7 +16,7 @@ run_input_assets:
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import JSONB
+from app.db.types import JSONType
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -29,7 +29,7 @@ class DataAsset(Base):
     asset_type: Mapped[str] = mapped_column(String(50), nullable=False)
     # STATIC_GRID | SAFE_AREA | RISK_MAP | MOBILITY_MAP | SENSOR_MAP | WEATHER
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    meta: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

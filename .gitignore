@@ -34,9 +34,13 @@ logs/
 *.code-workspace
 
 # ── 임시/로컬 패치 스크립트 (루트에 남은 잔여물) ─────────────
-auth_integration_patch.py
-auth_router.py
-security.py
-load_grid.py
-load_weather.py
-seed_scenarios.py
+/auth_integration_patch.py
+/auth_router.py
+/load_grid.py
+/load_weather.py
+/seed_scenarios.py
+/backend/auth_integration_patch.py
+/backend/auth_router.py
+/backend/load_grid.py
+/backend/load_weather.py
+/backend/seed_scenarios.py

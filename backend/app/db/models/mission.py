@@ -16,7 +16,7 @@ mission_force_mix_candidates:
 from datetime import datetime
 
 from sqlalchemy import DateTime, Double, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import JSONB
+from app.db.types import JSONType
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -86,7 +86,7 @@ class MissionForceMixCandidate(Base):
     )
     candidate_name: Mapped[str] = mapped_column(String(100), nullable=False)
     ugv_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    config: Mapped[dict] = mapped_column(JSONB, nullable=True)
+    config: Mapped[dict] = mapped_column(JSONType, nullable=True)
 
     mission: Mapped["Mission"] = relationship(
         "Mission", back_populates="force_mix_candidates"

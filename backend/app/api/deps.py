@@ -10,6 +10,7 @@ backend/app/api/deps.py
     operator  — 조회 및 제한된 조작
 """
 
+import re
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -36,3 +37,17 @@ def require_roles(*roles: str):
             )
         return user
     return _check
+
+
+def echelon_of(user: TokenPayload) -> int:
+    """통제관의 담당 제대 번호. 토큰의 unit 클레임("1제대")에서 읽는다.
+
+    예전에는 user.sub(DB id)의 마지막 자리를 제대 번호로 써서 user1(id=2)이 2제대로 잡혔다.
+    """
+    m = re.match(r"\s*(\d+)", user.unit or "")
+    if not m:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="담당 제대가 지정되지 않은 계정입니다.",
+        )
+    return int(m.group(1))

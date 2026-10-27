@@ -16,7 +16,7 @@ GET /api/runs/{run_id}/recommendation
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import CurrentUser, DBSession, require_roles
+from app.api.deps import CurrentUser, DBSession, echelon_of, require_roles
 from fastapi import HTTPException
 
 from app.db.schemas.dashboard import (
@@ -553,13 +553,8 @@ async def set_commander_mode(run_id: int, mode: str, db: DBSession, user: Curren
 async def get_asset_status(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     role = user.role or "operator"
-    # operator의 제대 번호: username 기반 추정 (user1→1, user2→2, user3→3)
-    scope = None
-    if role != "commander":
-        try:
-            scope = int(user.sub[-1]) if user.sub else 1
-        except Exception:
-            scope = 1
+    # operator 의 담당 제대: 토큰 unit 클레임 (user1→1제대 …)
+    scope = None if role == "commander" else echelon_of(user)
     result = await svc.get_asset_status(run_id, role, scope)
     if result is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
@@ -586,12 +581,7 @@ async def patch_asset_status(
         user_id = int(user.sub)
     except Exception:
         user_id = 0
-    scope = None
-    if role != "commander":
-        try:
-            scope = int(user.sub[-1]) if user.sub else 1
-        except Exception:
-            scope = 1
+    scope = None if role == "commander" else echelon_of(user)
     result = await svc.patch_asset_status(run_id, user_id, role, scope, body)
     if result is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
@@ -623,11 +613,8 @@ async def dispatch_mission(run_id: int, db: DBSession, user: CurrentUser):
 )
 async def get_operator_briefing(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
-    # 통제관의 제대 번호 추정
-    try:
-        echelon_no = int(user.sub[-1]) if user.sub else 1
-    except Exception:
-        echelon_no = 1
+    # 통제관의 담당 제대 (토큰 unit 클레임)
+    echelon_no = echelon_of(user)
     result = await svc.get_operator_briefing(run_id, echelon_no)
     if result is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
@@ -656,10 +643,7 @@ async def acknowledge_operator_briefing(run_id: int, db: DBSession, user: Curren
 )
 async def get_operator_dashboard(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
-    try:
-        echelon_no = int(user.sub[-1]) if user.sub else 1
-    except Exception:
-        echelon_no = 1
+    echelon_no = echelon_of(user)
     result = await svc.get_operator_dashboard(run_id, echelon_no)
     if result is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
@@ -686,10 +670,7 @@ async def get_operator_map(
     layer: str = Query("risk", description="레이어 타입: risk | mobility | sensor"),
 ):
     svc = DashboardService(db)
-    try:
-        echelon_no = int(user.sub[-1]) if user.sub else 1
-    except Exception:
-        echelon_no = 1
+    echelon_no = echelon_of(user)
     result = await svc.get_operator_map(run_id, echelon_no, layer)
     if result is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")

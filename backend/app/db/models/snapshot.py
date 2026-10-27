@@ -13,7 +13,7 @@ run_time_series_panels:
 from datetime import datetime
 
 from sqlalchemy import DateTime, Double, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import JSONB
+from app.db.types import JSONType
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -52,7 +52,7 @@ class RunTimeSeriesPanel(Base):
         ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
     panel_type: Mapped[str] = mapped_column(String(5), nullable=False)  # T0|T1|T2|T3
-    data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    data: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
