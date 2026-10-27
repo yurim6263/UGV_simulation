@@ -1,0 +1,5 @@
+# 오프라인 분석/학습 스크립트용 (서버 실행에는 필요 없다): pip install -r requirements-analysis.txt
+-r requirements.txt
+xarray>=2024.1.0
+netCDF4>=1.6.5
+xgboost>=2.0.0

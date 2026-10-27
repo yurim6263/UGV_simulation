@@ -13,10 +13,11 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DBSession, echelon_of
+from app.api.deps import CurrentUser, DBSession, echelon_of, require_roles
+from app.analysis.sql_reports import mode_comparison, run_report
 from app.db.models.mission import Mission, MissionTarget
 from app.db.models.simulation_run import SimulationRun
 from app.db.models.track import RunTrack
@@ -108,3 +109,22 @@ def overlay_image(kind: Literal["total", "mobility", "sensor"], turn: int, scale
     buf = io.BytesIO()
     overlay_png(grids[turn], lo, hi).save(buf, format="PNG", optimize=True)
     return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ── 실행 기록 SQL 분석 ───────────────────────────────────────────────────
+
+@router.get(
+    "/runs/{run_id}/analysis",
+    summary="실행 기록 SQL 분석 (SOS, 개입 대기, 대기열, 위험 구간, 모드 비교)",
+    dependencies=[Depends(require_roles("commander"))],
+)
+async def run_analysis(run_id: int, db: DBSession):
+    """지휘관 전용(전체 제대를 가로지르는 집계). 쿼리는 app/analysis/sql_reports.py 에 있다."""
+    run = await db.get(SimulationRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
+    report = await run_report(db, run_id)
+    if not report["queue_by_turn"]:
+        raise HTTPException(status_code=404, detail="아직 저장된 이동 기록이 없습니다.")
+    report["mode_comparison"] = await mode_comparison(db, run.mission_id)
+    return report

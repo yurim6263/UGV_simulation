@@ -51,3 +51,6 @@ backend/data/optimization/*.stage1.json
 # 개발용 SQLite 파일
 *.db
 *.db-journal
+
+# ERA5 지역 강수 캐시 (스크립트가 다시 만든다)
+backend/data/weather/cache/

@@ -235,6 +235,22 @@ python backend/scripts/make_report.py
 - 화면의 "최적화" 탭에서 파레토 곡선과 전술 메뉴판을 볼 수 있습니다(`frontend_js/static/optimization/pareto.json`).
 - 결과 해석과 한계는 [docs/optimization_report.md](docs/optimization_report.md)에 있습니다. **대부분의 비교에서 95% 신뢰구간이 겹쳐 최적화의 이득을 단정할 수 없고**, 뚜렷한 차이는 날씨 무시 기준선 대비 수색 면적뿐입니다.
 
+## 데이터 분석
+
+| 분석 | 실행 | 문서 |
+|---|---|---|
+| 강수 1~3시간 후 예측(ERA5 + XGBoost) vs 지속성, 저장소 예보의 리드타임별 오차 | `python backend/scripts/train_rain_model.py --era5-dir "<final_project>/ERA5_기상데이터_자료/ERA5_land"` 후 `python backend/scripts/make_weather_report.py` | [docs/weather_model_report.md](docs/weather_model_report.md) |
+| 실행 기록 SQL 분석(SOS, 개입 대기, 대기열, 위험 지점, 모드 비교) | `GET /api/runs/{id}/analysis` (지휘관) | [docs/sql_analysis.md](docs/sql_analysis.md) |
+
+주요 발견(자세한 근거와 한계는 각 문서):
+- ERA5의 누적 강수를 시간당으로 바꾸는 규칙이 오차를 만든다. 오후의 미세한 누적값 감소를 초기화로 오인하면 가짜 강수가 생긴다(10mm/h 초과 시간이 27건 → 428건).
+- 국소 강수 이력만 쓴 XGBoost는 지속성 기준선을 뚜렷하게 넘지 못했고, 강한 비(≥ 1mm/h)에서는 지속성이 더 낫다.
+- 저장소의 위험도 예보는 발표 1시간 뒤부터 지속성보다 오차가 크고 위험을 계속 낮게 본다.
+
+분석 스크립트에는 추가 패키지가 필요합니다: `pip install -r backend/requirements-analysis.txt` (서버 이미지에는 들어가지 않습니다).
+
+ERA5 원본 경로에 한글이 있으면 netCDF 라이브러리가 파일을 열지 못해, 로더는 ASCII 임시 경로로 복사해 연다. 학습용 지역 강수 캐시(`backend/data/weather/cache`)는 git에 넣지 않는다.
+
 ## 환경변수
 
 `backend/.env.example`을 `backend/.env`로 복사한 뒤 사용합니다.
