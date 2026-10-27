@@ -16,6 +16,7 @@ from app.db.models.snapshot import RunStatusSnapshot
 from app.db.models.track import RunTrack
 from app.db.models.unit_state import RunUnit
 from app.db.session import AsyncSessionLocal
+from app.simulation.presets import MODE_PRESETS
 from app.simulation.real_runner import build_scenario, even_split, run_real
 
 MISSION = {
@@ -58,7 +59,7 @@ def test_scenario_uses_one_team_per_target_and_the_preset_formation_when_it_matc
     base = {"departure_lat": 54.48, "departure_lon": 18.32, "duration_min": 240}
     three = [(54.40, 18.54), (54.33, 18.36), (54.37, 18.50)]
     spec, _ = build_scenario({**base, "total_ugv": 9, "targets": three}, "balance", 0.3)
-    assert spec.formation == (3, 4, 2) and len(spec.pois) == 3        # 프리셋 편성
+    assert spec.formation == MODE_PRESETS["balance"]["formation"] and len(spec.pois) == 3   # 프리셋 편성
     spec, _ = build_scenario({**base, "total_ugv": 5, "targets": three[:2]}, "rush", 0.3)
     assert spec.formation == (3, 2) and spec.assignment == (0, 1)     # 균등 분배
     spec, _ = build_scenario({**base, "total_ugv": 4, "targets": []}, "explore", 0.3)

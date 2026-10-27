@@ -26,6 +26,7 @@ pandas>=2.2.0
 pyarrow>=15.0.0
 numpy>=1.26.0
 scipy>=1.12.0
+pymoo>=0.6.1       # NSGA-II 다목적 최적화
 
 # 지형 PNG 생성 (Leaflet imageOverlay용)
 Pillow>=10.0.0

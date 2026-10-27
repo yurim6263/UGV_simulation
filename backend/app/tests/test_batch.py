@@ -49,3 +49,71 @@ def test_logs_are_only_returned_when_requested():
 def test_different_seeds_are_actually_different():
     metrics = [r.metrics for r in run_batch(_jobs(), workers=2)]
     assert len({(m["sos_events"], m["v1_coverage"]) for m in metrics}) > 1
+
+
+# ── 깨진 프로세스 풀 복구 ────────────────────────────────────────────────
+
+def test_broken_pool_is_recovered_by_rerunning_only_the_unfinished_jobs(monkeypatch):
+    """윈도우에서 작업 프로세스가 갑자기 죽으면(BrokenProcessPool) 25분짜리 최적화가 통째로 사라진 적이 있다."""
+    from concurrent.futures import Future
+    from concurrent.futures.process import BrokenProcessPool
+
+    import app.simulation.batch as batch
+
+    log = {"pools": 0, "executed": []}
+
+    class FlakyPool:
+        def __init__(self, max_workers, initializer=None):
+            log["pools"] += 1
+            self.first, self.submitted = log["pools"] == 1, 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def submit(self, fn, arg):
+            fut = Future()
+            if self.first and self.submitted >= 2:               # 첫 풀은 2개를 끝내고 깨진다
+                fut.set_exception(BrokenProcessPool("worker died"))
+            else:
+                log["executed"].append(arg[0].seed)
+                fut.set_result(fn(arg))
+            self.submitted += 1
+            return fut
+
+    monkeypatch.setattr(batch, "ProcessPoolExecutor", FlakyPool)
+    jobs = _jobs()
+    results = batch.run_batch(jobs, workers=2)
+
+    assert log["pools"] == 2                                      # 한 번 깨진 뒤 새 풀로 이어서 실행
+    assert log["executed"] == [1, 2, 3, 4]                        # 끝난 작업(1, 2)은 다시 돌리지 않았다
+    assert [r.job.seed for r in results] == [1, 2, 3, 4]
+    assert all(r.metrics for r in results)
+
+
+def test_pool_that_keeps_breaking_eventually_raises(monkeypatch):
+    from concurrent.futures import Future
+    from concurrent.futures.process import BrokenProcessPool
+
+    import app.simulation.batch as batch
+
+    class AlwaysBroken:
+        def __init__(self, max_workers, initializer=None):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def submit(self, fn, arg):
+            fut = Future()
+            fut.set_exception(BrokenProcessPool("worker died"))
+            return fut
+
+    monkeypatch.setattr(batch, "ProcessPoolExecutor", AlwaysBroken)
+    with pytest.raises(BrokenProcessPool):
+        batch.run_batch(_jobs(), workers=2, retries=1)

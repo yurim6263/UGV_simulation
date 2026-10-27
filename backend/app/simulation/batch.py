@@ -15,7 +15,8 @@ backend/app/simulation/batch.py
 from __future__ import annotations
 
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 
 from app.simulation.algo.episode import Genes, ScenarioSpec, run_episode
@@ -52,11 +53,33 @@ def default_workers() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
-def run_batch(jobs: list[Job], workers: int | None = None, keep_log: bool = False) -> list[BatchResult]:
-    """jobs 를 병렬로 실행해 같은 순서의 결과를 돌려준다. workers=1 이면 현재 프로세스에서 순차 실행."""
+def run_batch(jobs: list[Job], workers: int | None = None, keep_log: bool = False, retries: int = 2) -> list[BatchResult]:
+    """jobs 를 병렬로 실행해 같은 순서의 결과를 돌려준다. workers=1 이면 현재 프로세스에서 순차 실행.
+
+    윈도우에서 작업 프로세스가 갑자기 죽어 풀이 깨지는 일이 있다(BrokenProcessPool). 그때는 이미 끝난
+    결과를 보존하고 남은 작업만 새 풀로 다시 돌린다 (최대 retries 번). 에피소드는 시드가 같으면 결과가 같으므로
+    다시 돌려도 안전하다.
+    """
     workers = min(workers or default_workers(), max(1, len(jobs)))
     if workers == 1:
         _init_worker()
         return [_run_job((j, keep_log)) for j in jobs]
-    with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as pool:
-        return list(pool.map(_run_job, [(j, keep_log) for j in jobs], chunksize=1))
+
+    results: list[BatchResult | None] = [None] * len(jobs)
+    pending = list(range(len(jobs)))
+    for attempt in range(retries + 1):
+        futures: dict = {}
+        try:
+            with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as pool:
+                futures = {pool.submit(_run_job, (jobs[i], keep_log)): i for i in pending}
+                for fut in as_completed(futures):
+                    results[futures[fut]] = fut.result()
+            return results                                    # type: ignore[return-value]
+        except BrokenProcessPool:
+            for fut, i in futures.items():                    # 깨지기 전에 끝난 결과를 건진다
+                if fut.done() and not fut.cancelled() and fut.exception() is None:
+                    results[i] = fut.result()
+            pending = [i for i in pending if results[i] is None]
+            if attempt == retries or not pending:
+                raise
+    return results                                            # type: ignore[return-value]

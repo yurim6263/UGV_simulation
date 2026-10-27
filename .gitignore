@@ -44,3 +44,6 @@ logs/
 /backend/load_grid.py
 /backend/load_weather.py
 /backend/seed_scenarios.py
+
+# 최적화 중간 저장 (재현용 임시 파일)
+backend/data/optimization/*.stage1.json

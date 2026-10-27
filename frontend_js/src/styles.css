@@ -101,3 +101,25 @@
 .tile-info { display: grid; grid-template-columns: 90px 1fr; gap: 3px 8px; margin: 10px 0 0; padding: 8px; background: #1e293b; border-radius: 8px; font-size: 12px; }
 .tile-info dt { color: #94a3b8; }
 .tile-info dd { margin: 0; color: #e2e8f0; }
+
+/* ── 최적화(파레토) 패널 ───────────────────────────────────────────── */
+.pareto { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; font-size: 12px; color: #cbd5e1; }
+.pareto h3 { margin: 10px 0 6px; font-size: 13px; color: #e2e8f0; }
+.pareto h3 small { display: block; margin-top: 2px; font-size: 10px; font-weight: normal; color: #64748b; }
+.pareto-chart { width: 100%; background: #1e293b; border-radius: 8px; }
+.pareto-chart line { stroke: #64748b; stroke-width: 1; }
+.pareto-chart .cloud { fill: #94a3b8; opacity: .35; }
+.pareto-chart .cloud.bad { fill: #64748b; opacity: .2; }
+.pareto-chart .front { fill: none; stroke: #fff; stroke-width: 1.2; }
+.pareto-chart .tag { font-size: 10px; font-weight: 700; text-anchor: middle; }
+.pareto-chart .axis { fill: #94a3b8; font-size: 9px; text-anchor: middle; }
+.pareto .legend { margin: 4px 0 0; font-size: 10px; color: #94a3b8; }
+.pareto .dot { display: inline-block; width: 8px; height: 8px; margin-right: 2px; border-radius: 50%; vertical-align: middle; }
+.pareto .dot.cloud { background: #94a3b8; opacity: .5; }
+.pareto .dot.front { border: 1.5px solid #fff; }
+.archetype { display: grid; gap: 2px; width: 100%; margin-bottom: 6px; padding: 7px 9px; text-align: left; border: 0; border-left: 4px solid; border-radius: 6px; background: #1e293b; color: #e2e8f0; cursor: pointer; }
+.archetype b { font-size: 13px; }
+.archetype em { font-style: normal; color: #94a3b8; }
+.pareto .ab { margin: 8px 0 4px; padding: 7px 9px; border-radius: 6px; background: #0f172a; color: #e2e8f0; }
+.pareto .ab b { color: #f59e0b; }
+.pareto .note { margin: 6px 0 0; font-size: 10px; color: #64748b; line-height: 1.4; }

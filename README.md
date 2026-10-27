@@ -215,6 +215,24 @@ python backend/scripts/export_replay.py `
 
 데이터 형식, 엔진 동작, 알려진 불일치는 [docs/data_contract.md](docs/data_contract.md)에 정리되어 있습니다.
 
+## 전술 최적화 (NSGA-II + 몬테카를로)
+
+균형/정밀/신속 모드의 편성과 전술 설정은 임의 값이 아니라 다목적 최적화 결과입니다.
+
+```powershell
+# 최적화 (개체 20 x 10세대) + 새 시드 몬테카를로 검증. 작업자 1개당 메모리 약 180MB. 약 40~70분
+python backend/scripts/run_nsga2.py --pop 20 --gens 10 --val-seeds 10 --workers 6 --out backend/data/optimization/pareto.json
+# 검증에서 실패했다면 최적화를 건너뛰고 이어서
+python backend/scripts/run_nsga2.py --resume --val-seeds 10 --workers 6 --out backend/data/optimization/pareto.json
+# 결과 보고서 생성 (docs/optimization_report.md)
+python backend/scripts/make_report.py
+```
+
+- 목표: 수색 면적(최대화), 작전 시간(최소화), 운용자 과부하 시간(최소화). 제약: 평균 도착률 80% 이상.
+- `backend/data/optimization/pareto.json`이 있으면 서버가 이 결과의 신속/정밀/균형 원형을 모드 설정으로 씁니다. `SIM_PRESETS=reference`로 팀원 기준 프리셋을 강제할 수 있습니다.
+- 화면의 "최적화" 탭에서 파레토 곡선과 전술 메뉴판을 볼 수 있습니다(`frontend_js/static/optimization/pareto.json`).
+- 결과 해석과 한계는 [docs/optimization_report.md](docs/optimization_report.md)에 있습니다. **대부분의 비교에서 95% 신뢰구간이 겹쳐 최적화의 이득을 단정할 수 없고**, 뚜렷한 차이는 날씨 무시 기준선 대비 수색 면적뿐입니다.
+
 ## 환경변수
 
 `backend/.env.example`을 `backend/.env`로 복사한 뒤 사용합니다.

@@ -6,6 +6,7 @@ import { useReplay } from "./replay/useReplay";
 import ReplayMap from "./replay/ReplayMap";
 import ReplayControls from "./replay/ReplayControls";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
+import ParetoPanel from "./replay/ParetoPanel";
 import { REPLAY_SOURCES, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, teamRedRatio } from "./replay/replayModel";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8001";
@@ -250,12 +251,13 @@ function MainDashboard({ account, targets, onLogout }) {
           {model ? <KpiSummary replay={replay} team={myTeam} /> : <section className="mission-summary"><h2>임무 요약</h2></section>}
           <section className="ltwr-panel">
             <div className="tabs">
-              {[["events", "이벤트"], ["units", "UGV 상태"], ["ltwr", "LTWR 예측"]].map(([key, label]) => (
+              {[["events", "이벤트"], ["units", "UGV 상태"], ["pareto", "최적화"], ["ltwr", "LTWR 예측"]].map(([key, label]) => (
                 <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>
               ))}
             </div>
             {model && tab === "events" && <EventList replay={replay} allowedTeams={allowedTeams} />}
             {model && tab === "units" && <AgentTable replay={replay} allowedTeams={allowedTeams} />}
+            {tab === "pareto" && <ParetoPanel onPickMode={replay.setMode} />}
             {tab === "ltwr" && <><h2>지형작전 기상 위험도 - LTWR</h2><LtwrPanel /></>}
           </section>
         </aside>
