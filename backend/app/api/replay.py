@@ -7,8 +7,13 @@ GET /api/runs/{run_id}/replay — 저장된 이동 기록(run_tracks)을 재생 
 통제관은 자기 제대의 기록만 받는다.
 """
 
+import io
+from functools import lru_cache
+from typing import Literal
+
+import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DBSession, echelon_of
@@ -46,7 +51,9 @@ async def get_replay(run_id: int, db: DBSession, user: CurrentUser):
 
     if user.role not in ("commander", "admin"):                 # 통제관은 자기 제대만
         team = TEAMS[echelon_of(user) - 1]
-        df = df[df.agent_id.str.contains(f"_{team}") | df.agent_id.str.endswith(f"_{team}")]
+        df = df[df.agent_id.str.endswith(f"_{team}") | df.agent_id.str.contains(f"_{team}_")]
+        if df.empty:                       # 이 임무에는 해당 제대가 편성되지 않았다 (예: 목표 2곳인 임무의 3제대)
+            raise HTTPException(status_code=404, detail=f"이 임무에는 {team} 제대의 기록이 없습니다.")
 
     targets = (await db.execute(
         select(MissionTarget).where(MissionTarget.mission_id == mission.id).order_by(MissionTarget.seq)
@@ -67,3 +74,37 @@ async def get_replay(run_id: int, db: DBSession, user: CurrentUser):
         },
         "mode": build_mode(df, mode, MODES[mode], poi_cells),
     }
+
+
+# ── 위험도 지도 이미지 (재생 화면의 오버레이) ────────────────────────────
+# <img>/Leaflet 은 인증 헤더를 보낼 수 없고, 지형·위험도 지도는 다른 지도 API(/api/map/tactical)처럼 공개 데이터다.
+
+_OVERLAY_KINDS = {"total": "total", "mobility": "mob", "sensor": "sen"}
+_MAX_OVERLAY_TURN = 30      # 실황 데이터 범위 (31개 레이어)
+
+
+@lru_cache(maxsize=16)
+def _overlay_setup(kind: str, scale: float):
+    """종류/강도별 턴 격자와 G/A/R 경계(전 턴 공통 30/70 분위수). 최초 1회만 계산한다."""
+    from datetime import timedelta
+
+    from app.simulation.shared_env import get_environment
+
+    env = get_environment()
+    grids = [np.clip(env.latest_actual_at(env.start_time + timedelta(minutes=10 * t), _OVERLAY_KINDS[kind]) * scale, 0, 1)
+             for t in range(_MAX_OVERLAY_TURN + 1)]
+    lo, hi = np.percentile(np.concatenate([g[np.isfinite(g)] for g in grids]), [30, 70])
+    return grids, float(lo), float(hi)
+
+
+@router.get("/map/overlay/{kind}/{turn}.png", summary="턴별 위험도 오버레이 이미지 (G/A/R)")
+def overlay_image(kind: Literal["total", "mobility", "sensor"], turn: int, scale: float | None = None):
+    from app.simulation.real_runner import _weather_scale
+    from app.simulation.replay import overlay_png
+
+    if not 0 <= turn <= _MAX_OVERLAY_TURN:
+        raise HTTPException(status_code=404, detail=f"턴은 0~{_MAX_OVERLAY_TURN} 범위입니다.")
+    grids, lo, hi = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))
+    buf = io.BytesIO()
+    overlay_png(grids[turn], lo, hi).save(buf, format="PNG", optimize=True)
+    return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})

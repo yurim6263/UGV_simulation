@@ -1,14 +1,9 @@
-export const accounts = {
-  admin: { password: "admin", role: "commander", label: "지휘관" },
-  user1: { password: "user1", role: "controller", label: "1제대 통제관", unit: "1제대" },
-  user2: { password: "user2", role: "controller", label: "2제대 통제관", unit: "2제대" },
-  user3: { password: "user3", role: "controller", label: "3제대 통제관", unit: "3제대" },
-};
-
+// 계정은 서버(DB)가 관리한다. 여기에는 화면 표시용 기본값만 둔다.
+// 목표 좌표 기본값: 팀원 시뮬레이션의 정찰지 3곳 (작전 구역 안). 정찰 시간은 분 단위.
 export const initialTargets = {
-  user1: { title: "도착지1", lat: "", lng: "", recon: "" },
-  user2: { title: "도착지2", lat: "", lng: "", recon: "" },
-  user3: { title: "도착지3", lat: "", lng: "", recon: "" },
+  user1: { title: "도착지1", lat: "54.40", lng: "18.54", recon: "30" },
+  user2: { title: "도착지2", lat: "54.33", lng: "18.36", recon: "30" },
+  user3: { title: "도착지3", lat: "54.37", lng: "18.50", recon: "30" },
 };
 
 export const units = [

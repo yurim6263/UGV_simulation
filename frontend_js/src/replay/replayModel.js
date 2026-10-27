@@ -1,12 +1,13 @@
 // 재생 데이터 모델: 이동 기록(JSON) → 프레임별 상태 / 이벤트.
 // 지도·패널은 이 모델에서 파생된 값만 읽는다 (HTML 안에 섞여 있던 로직을 분리한 것).
 
-// 재생 데이터 출처: 팀원 시뮬레이션 기록(참조) / 서버 엔진 실행 결과
+// 재생 데이터 출처: 서버 실행(API) / 팀원 시뮬레이션 기록(참조, 정적) / 엔진 실행(정적 사본)
 export const REPLAY_SOURCES = {
+  server: { label: "서버 실행", dir: null },
   reference: { label: "팀원 기록", dir: "replay" },
   engine: { label: "엔진 실행", dir: "replay_engine" },
 };
-export const replayBase = (source) => `${import.meta.env.BASE_URL}${REPLAY_SOURCES[source].dir}`;
+export const replayBase = (source) => (REPLAY_SOURCES[source].dir ? `${import.meta.env.BASE_URL}${REPLAY_SOURCES[source].dir}` : null);
 
 export const TEAM_UNIT = { Alpha: "1제대", Bravo: "2제대", Charlie: "3제대" };
 export const USER_TEAM = { user1: "Alpha", user2: "Bravo", user3: "Charlie" };

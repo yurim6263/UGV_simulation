@@ -13,6 +13,20 @@ class RunCreate(BaseModel):
     pass  # 생성은 mission_id로만 트리거 (POST /missions/{id}/runs)
 
 
+class RunSetItem(BaseModel):
+    id: int
+    mode: str          # balanced | recon | rapid
+    status: str
+    progress_pct: int
+
+
+class RunSetOut(BaseModel):
+    """가장 최근 임무의 실행들 (모드별 1개씩)."""
+    mission_id: int
+    runs: list[RunSetItem]
+    all_completed: bool
+
+
 class RunOut(BaseModel):
     id: int
     mission_id: int

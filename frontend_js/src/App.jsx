@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ImageOverlay, MapContainer, Marker, TileLayer, Tooltip } from "react-leaflet";
-import { accounts, initialTargets, ltwrMaps, units } from "./data";
+import { API_URL, clearToken, launchMission, latestRunSet, login as apiLogin, waitForRuns } from "./api";
+import { initialTargets, ltwrMaps, units } from "./data";
 import { useReplay } from "./replay/useReplay";
 import ReplayMap from "./replay/ReplayMap";
 import ReplayControls from "./replay/ReplayControls";
@@ -9,7 +10,6 @@ import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
 import { REPLAY_SOURCES, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, teamRedRatio } from "./replay/replayModel";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8001";
 const MAP_BOUNDS = [[54.2977, 18.2640], [54.5209, 18.6479]];
 
 function markerIcon(color) {
@@ -27,11 +27,20 @@ function LoginPage({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  function submit(event) {
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
     event?.preventDefault();
-    const account = accounts[username.trim()];
-    if (!account || account.password !== password) return setError("정보가 올바르지 않습니다.");
-    onLogin({ ...account, username: username.trim() }, setError);
+    if (!username.trim() || !password) return setError("아이디와 비밀번호를 입력하세요.");
+    setBusy(true);
+    setError("");
+    try {
+      await onLogin(username.trim(), password);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -45,7 +54,7 @@ function LoginPage({ onLogin }) {
             <label>USER ID<input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus /></label>
             <label>PASSWORD<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
             {error && <p className="login-error">{error}</p>}
-            <button className="login-submit">Login to Dashboard</button>
+            <button className="login-submit" disabled={busy}>{busy ? "Signing in..." : "Login to Dashboard"}</button>
           </form>
         </div>
       )}
@@ -109,12 +118,58 @@ function CommanderInputPage({ targets, setTargets, onSubmit }) {
   );
 }
 
-function LoadingPage({ onDone }) {
+// 지휘관이 입력한 목표로 임무를 만들고 3개 모드의 시뮬레이션을 서버에서 실행한다 (실제 진행을 보여준다)
+function LaunchPage({ targets, onDone, onBack }) {
+  const [status, setStatus] = useState("임무를 만드는 중…");
+  const [error, setError] = useState("");
+  // 개발 모드(StrictMode)는 효과를 한 번 정리했다가 다시 실행한다. 임무가 두 번 만들어지지 않도록 시작은 한 번만 하고,
+  // "화면이 아직 있는가"는 시작 여부와 따로 추적한다 (둘을 섞으면 정리 때 꺼진 값이 되살아나지 않아 진행 표시가 멈춘다).
+  const started = useRef(false);
+  const mounted = useRef(true);
   useEffect(() => {
-    const timer = setTimeout(onDone, 2000);
-    return () => clearTimeout(timer);
-  }, [onDone]);
-  return <main className="loading-page"><div className="sticks">{[0,1,2,3,4,5].map((n) => <i key={n} />)}</div><h1>시뮬레이션 실행 중...</h1></main>;
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    (async () => {
+      try {
+        const parsed = Object.values(targets).map((t) => ({
+          lat: Number(t.lat), lon: Number(t.lng), patrolSec: Math.max(0, Number(t.recon || 0)) * 60,
+        }));
+        if (parsed.some((t) => !Number.isFinite(t.lat) || !Number.isFinite(t.lon) || t.lat === 0 || t.lon === 0)) {
+          throw new Error("세 목표의 위도와 경도를 모두 숫자로 입력하세요.");
+        }
+        await launchMission({ targets: parsed });
+        const set = await waitForRuns((s) => {
+          if (!mounted.current) return;
+          const done = s.runs.filter((r) => r.status === "COMPLETED").length;
+          const avg = Math.round(s.runs.reduce((n, r) => n + r.progress_pct, 0) / Math.max(1, s.runs.length));
+          setStatus(`시뮬레이션 실행 중… 모드 ${done}/${s.runs.length} 완료 (진행 ${avg}%)`);
+        });
+        if (mounted.current) onDone(set);
+      } catch (e) {
+        if (mounted.current) setError(e.message);
+      }
+    })();
+    // 의도적으로 한 번만 실행한다 (targets/onDone 이 바뀌어도 임무를 다시 만들지 않는다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <main className="loading-page">
+      <div className="sticks">{[0, 1, 2, 3, 4, 5].map((n) => <i key={n} />)}</div>
+      {error ? (
+        <>
+          <h1>시뮬레이션을 실행하지 못했습니다</h1>
+          <p className="login-error">{error}</p>
+          <button className="briefing-button" onClick={onBack}>목표 입력으로 돌아가기</button>
+        </>
+      ) : <h1>{status}</h1>}
+    </main>
+  );
 }
 
 function LineChart({ values, colors }) {
@@ -151,7 +206,7 @@ function remainingLabel(turns, turn) {
 }
 
 function MainDashboard({ account, targets, onLogout }) {
-  const [source, setSource] = useState("reference");
+  const [source, setSource] = useState("server");
   const replay = useReplay(source);
   const [tab, setTab] = useState("events");
   const [notice, setNotice] = useState("");
@@ -266,25 +321,25 @@ function MainDashboard({ account, targets, onLogout }) {
   );
 }
 
-function UserMissionPage({ account, targets, onConfirm }) {
-  // 대시보드와 같은 재생 데이터(균형 모드)에서 읽는다. 예전에는 화면에 숫자를 직접 적어 두어 대시보드와 서로 달랐다.
-  const replay = useReplay("reference");
+function UserMissionPage({ account, onConfirm }) {
+  // 서버가 돌려준 이 제대의 시뮬레이션 결과(균형 모드)를 보여준다. 통제관은 자기 제대 기록만 받는다.
+  const replay = useReplay("server");
   const team = USER_TEAM[account.username];
   const unit = units.find((item) => item.key === account.username);
   const model = replay.models?.balance;
   const pt = model?.kpi.per_team[team];
-  const allTeams = model ? Object.values(model.kpi.per_team) : [];
   const poi = pt?.poi ? replay.scenario?.pois.find((p) => p.id === pt.poi) : null;
   const dash = (v) => (v === null || v === undefined ? "-" : v);
   return (
     <main className="briefing-root">
-      <header><h1>{unit.name} 통제관 임무 브리핑</h1><p>지휘관이 하달한 임무 정보를 확인하세요.</p></header>
+      <header><h1>{unit?.name ?? account.unit} 통제관 임무 브리핑</h1><p>지휘관이 하달한 임무 정보를 확인하세요.</p></header>
+      {replay.error && <p className="login-error">{replay.error}</p>}
       <div className="briefing-cards">
-        <section><h2>부대 기본자산</h2><p><span>총 제대 수</span><b>{dash(allTeams.length || null)}</b></p><p><span>총 통제관 수</span><b>{dash(allTeams.length || null)}</b></p><p><span>총 정찰 UGV 수</span><b>{dash(allTeams.reduce((n, t) => n + t.ugv, 0) || null)}</b></p></section>
-        <section><h2>{unit.name} 자산 현황</h2><p><span>통제관 수</span><b>1</b></p><p><span>운용 UGV 수</span><b>{dash(pt?.ugv)}</b></p><p><span>목표 위도</span><b>{targets[unit.key].lat || dash(poi?.lat)}</b></p><p><span>목표 경도</span><b>{targets[unit.key].lng || dash(poi?.lon)}</b></p></section>
-        <section><h2>임무 정보</h2><p><span>임무 모드</span><b className="highlight">균형</b></p><p><span>운용 UGV 수</span><b className="highlight">{dash(pt?.ugv)}</b></p><p><span>출발 예정 시각</span><b>T+0분</b></p><p><span>도착 예정 시각</span><b>{pt ? (pt.arrive_turn == null ? "미도착" : elapsedLabel(pt.arrive_turn + 1)) : "-"}</b></p></section>
+        <section><h2>{account.unit} 자산 현황</h2><p><span>통제관 수</span><b>1</b></p><p><span>운용 UGV 수</span><b>{dash(pt?.ugv)}</b></p><p><span>목표 위도</span><b>{dash(poi?.lat)}</b></p><p><span>목표 경도</span><b>{dash(poi?.lon)}</b></p></section>
+        <section><h2>시뮬레이션 결과 (균형)</h2><p><span>도착 UGV</span><b>{pt ? `${pt.arrived}/${pt.ugv}` : "-"}</b></p><p><span>SOS 발생</span><b>{dash(pt?.sos)}</b></p><p><span>평균 개입 대기</span><b>{pt ? `${Math.round(pt.wait_turns_mean * 10)}분` : "-"}</b></p></section>
+        <section><h2>임무 정보</h2><p><span>임무 모드</span><b className="highlight">균형</b></p><p><span>출발 예정 시각</span><b>T+0분</b></p><p><span>도착 예정 시각</span><b>{pt ? (pt.arrive_turn == null ? "미도착" : elapsedLabel(pt.arrive_turn + 1)) : "-"}</b></p></section>
       </div>
-      <button className="briefing-button" onClick={onConfirm}>통제관 메인 페이지로 넘어가기</button>
+      <button className="briefing-button" onClick={onConfirm} disabled={!model}>통제관 메인 페이지로 넘어가기</button>
     </main>
   );
 }
@@ -293,17 +348,27 @@ export default function App() {
   const [account, setAccount] = useState(null);
   const [page, setPage] = useState("login");
   const [targets, setTargets] = useState(initialTargets);
-  const [commanderReady, setCommanderReady] = useState(false);
 
-  function login(next, setError) {
-    if (next.role === "controller" && !commanderReady) return setError("아직 지휘관이 임무 입력 및 시뮬레이션을 완료하지 않았습니다.");
+  // 서버 로그인. 통제관은 지휘관의 시뮬레이션이 끝나 있어야 들어갈 수 있다.
+  async function login(username, password) {
+    const next = await apiLogin(username, password);
+    if (next.role === "controller") {
+      try {
+        const set = await latestRunSet();
+        if (!set.all_completed) throw new Error("not ready");
+      } catch (e) {
+        clearToken();
+        if (e.status === 0) throw e;                          // 서버 연결 실패는 그대로 알린다
+        throw new Error("아직 지휘관이 임무 입력 및 시뮬레이션을 완료하지 않았습니다.");
+      }
+    }
     setAccount(next);
     setPage(next.role === "commander" ? "input" : "briefing");
   }
-  function logout() { setAccount(null); setPage("login"); }
+  function logout() { clearToken(); setAccount(null); setPage("login"); }
   if (!account || page === "login") return <LoginPage onLogin={login} />;
   if (page === "input") return <CommanderInputPage targets={targets} setTargets={setTargets} onSubmit={() => setPage("loading")} />;
-  if (page === "loading") return <LoadingPage onDone={() => { setCommanderReady(true); setPage("main"); }} />;
-  if (page === "briefing") return <UserMissionPage account={account} targets={targets} onConfirm={() => setPage("main")} />;
+  if (page === "loading") return <LaunchPage targets={targets} onDone={() => setPage("main")} onBack={() => setPage("input")} />;
+  if (page === "briefing") return <UserMissionPage account={account} onConfirm={() => setPage("main")} />;
   return <MainDashboard account={account} targets={targets} onLogout={logout} />;
 }

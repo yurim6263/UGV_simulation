@@ -101,7 +101,7 @@ async def run_real(run_id: int) -> None:
 
     await _reset_outputs(run_id)          # 같은 run 을 다시 실행해도 이전 산출물이 중복되지 않게
     env = await asyncio.to_thread(get_environment)
-    seed = run_id
+    seed = mission["id"]                 # 한 임무의 모드들은 같은 시드(공통 난수)를 써서 모드 비교가 우연의 영향을 덜 받게 한다
     result = await asyncio.to_thread(run_episode, env, spec, genes, seed)
     baseline = await asyncio.to_thread(run_episode, env, spec, baseline_genes(), seed)
 
@@ -126,6 +126,7 @@ async def _load_mission(run_id: int) -> tuple[dict, str]:
         )).scalars().all()
         mode = MODE_ALIASES.get(run.selected_mode or "balanced", "balance")
         return {
+            "id": mission.id,
             "total_ugv": max(1, mission.total_ugv),
             "departure_lat": mission.departure_lat,
             "departure_lon": mission.departure_lon,

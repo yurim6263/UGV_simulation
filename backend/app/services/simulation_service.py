@@ -21,11 +21,11 @@ class SimulationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create_run(self, mission_id: int) -> SimulationRun | None:
+    async def create_run(self, mission_id: int, mode: str | None = None) -> SimulationRun | None:
         mission = await self.db.get(Mission, mission_id)
         if mission is None:
             return None
-        run = SimulationRun(mission_id=mission_id, status="CREATED")
+        run = SimulationRun(mission_id=mission_id, status="CREATED", selected_mode=mode)
         self.db.add(run)
         await self.db.commit()
         await self.db.refresh(run)

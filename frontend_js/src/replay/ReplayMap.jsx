@@ -14,15 +14,15 @@ const starIcon = (color) => L.divIcon({
 
 // 지도는 그리기만 한다. 모드·오버레이·시간·제대 필터·선택은 모두 밖(useReplay)에서 온다.
 export default function ReplayMap({ replay, allowedTeams }) {
-  const { base, scenario, model, frame, overlay, teams, selected, setSelected } = replay;
+  const { overlayUrl, scenario, model, frame, overlay, teams, selected, setSelected } = replay;
   const turn = model.frames[frame].turn;
   const nextTurn = Math.min(turn + 1, scenario.turns - 1);
 
   // 다음 턴 오버레이를 미리 받아 깜빡임을 줄인다
   useEffect(() => {
     const img = new Image();
-    img.src = `${base}/overlay/${overlay}/${nextTurn}.png`;
-  }, [base, overlay, nextTurn]);
+    img.src = overlayUrl(overlay, nextTurn);
+  }, [overlayUrl, overlay, nextTurn]);
 
   const visible = useMemo(
     () => model.agents
@@ -41,7 +41,7 @@ export default function ReplayMap({ replay, allowedTeams }) {
     <MapContainer bounds={scenario.bounds} boundsOptions={{ padding: [6, 6] }} zoomControl attributionControl={false}>
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={18} opacity={0.5} />
       <ImageOverlay
-        url={`${base}/overlay/${overlay}/${turn}.png`}
+        url={overlayUrl(overlay, turn)}
         bounds={scenario.bounds}
         opacity={0.85}
         className="replay-overlay"

@@ -68,6 +68,7 @@
 .replay-speed button.active { background: #e67e22; color: #fff; }
 
 .mode-buttons button:disabled, .control-buttons button:disabled { opacity: .5; }
+.mode-buttons button { white-space: nowrap; font-size: 13px; padding: 0 4px; }
 .team-chip { border: 2px solid; background: #1e293b; }
 .team-chip:not(.on) { opacity: .4; }
 

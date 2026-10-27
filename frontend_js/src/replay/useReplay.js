@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchServerReplay, overlayUrl as serverOverlayUrl } from "../api";
 import { buildReplay, frameForTurn, replayBase } from "./replayModel";
 
 // 재생 화면의 단일 상태 저장소.
 // 지도와 모든 패널(모드, 오버레이, 시간, 제대 필터, 선택 UGV, 이벤트)이 같은 상태를 구독한다.
 const FRAME_MS = 120; // 1배속에서 프레임 간격
 
-export function useReplay(source = "reference") {
+export function useReplay(source = "server") {
   const base = replayBase(source);
   const [scenario, setScenario] = useState(null);
   const [models, setModels] = useState(null);
@@ -29,23 +30,36 @@ export function useReplay(source = "reference") {
     setSelected(null);
     (async () => {
       try {
-        const sc = await (await fetch(`${base}/scenario.json`)).json();
-        const raws = await Promise.all(
-          sc.modes.map(async (m) => {
-            const res = await fetch(`${base}/${m.key}.json`);
-            if (!res.ok) throw new Error(`${m.key}.json (${res.status})`);
-            return res.json();
-          }),
-        );
+        let sc;
+        let raws;
+        if (source === "server") {
+          ({ scenario: sc, raws } = await fetchServerReplay());
+        } else {
+          sc = await (await fetch(`${base}/scenario.json`)).json();
+          raws = await Promise.all(
+            sc.modes.map(async (m) => {
+              const res = await fetch(`${base}/${m.key}.json`);
+              if (!res.ok) throw new Error(`${m.key}.json (${res.status})`);
+              return res.json();
+            }),
+          );
+        }
         if (cancelled) return;
         setScenario(sc);
         setModels(Object.fromEntries(raws.map((r) => [r.mode, buildReplay(r)])));
+        setModeState((current) => (raws.some((r) => r.mode === current) ? current : raws[0].mode));
       } catch (e) {
         if (!cancelled) setError(`재생 데이터를 불러오지 못했습니다: ${e.message}`);
       }
     })();
     return () => { cancelled = true; };
-  }, [base]);
+  }, [source, base]);
+
+  // 지도 오버레이 이미지 주소: 서버 실행은 API, 정적 출처는 변환 스크립트가 만든 PNG
+  const overlayUrl = useCallback(
+    (kind, turn) => (source === "server" ? serverOverlayUrl(kind, turn) : `${base}/overlay/${kind}/${turn}.png`),
+    [source, base],
+  );
 
   const model = models?.[mode] ?? null;
   const lastFrame = model ? model.frames.length - 1 : 0;
@@ -85,9 +99,9 @@ export function useReplay(source = "reference") {
   const toggleTeam = useCallback((team) => setTeams((t) => ({ ...t, [team]: !t[team] })), []);
 
   return useMemo(() => ({
-    base, scenario, models, model, error, loading: !error && !model,
+    source, base, overlayUrl, scenario, models, model, error, loading: !error && !model,
     mode, setMode, overlay, setOverlay, frame, seek, lastFrame,
     playing, setPlaying, togglePlay, speed, setSpeed,
     teams, toggleTeam, selected, setSelected,
-  }), [base, scenario, models, model, error, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
+  }), [source, base, overlayUrl, scenario, models, model, error, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
 }

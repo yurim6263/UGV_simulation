@@ -109,7 +109,7 @@ async def test_kpis_are_deterministic_for_the_same_run_id_not_random(auth_client
     async with AsyncSessionLocal() as db:
         first = (await db.execute(select(RunKpi).where(RunKpi.run_id == run_id))).scalar_one().success_rate
     tracks = await _count(RunTrack, run_id)
-    # 같은 run 을 다시 실행해도(시드 = run_id) 같은 결과이고, 이전 산출물이 쌓여 중복되지 않아야 한다
+    # 같은 run 을 다시 실행해도(시드 = 임무 id) 같은 결과이고, 이전 산출물이 쌓여 중복되지 않아야 한다
     await run_real(run_id)
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(select(RunKpi).where(RunKpi.run_id == run_id))).scalars().all()
@@ -185,3 +185,110 @@ def test_scenario_converts_patrol_seconds_to_turns():
             "targets": [(54.40, 18.54), (54.33, 18.36)], "patrol_sec": [1800, 601]}
     spec, _ = build_scenario(base, "rush", 0.3)
     assert spec.dwell_turns == (3, 2)                          # 1800초 = 3턴, 601초는 올림해 2턴
+
+
+# ── 프론트 연동용 API ────────────────────────────────────────────────────
+
+BIG = {**MISSION, "total_ugv": 9}
+
+
+@pytest.mark.asyncio
+async def test_mission_can_hold_the_whole_force_not_just_four_ugvs(auth_client: AsyncClient):
+    """예전 스키마는 total_ugv 를 4대로 제한했다. 임무 하나가 3개 제대 전체를 편성하므로 9대가 가능해야 한다."""
+    assert (await auth_client.post("/api/missions", json=BIG)).status_code == 201
+    assert (await auth_client.post("/api/missions", json={**MISSION, "total_ugv": 21})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_run_can_be_created_with_a_mode_and_rejects_unknown_modes(auth_client: AsyncClient):
+    mid = (await auth_client.post("/api/missions", json=MISSION)).json()["id"]
+    ok = await auth_client.post(f"/api/missions/{mid}/runs?mode=rapid")
+    assert ok.status_code == 201
+    assert (await auth_client.post(f"/api/missions/{mid}/runs?mode=turbo")).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_latest_run_set_lists_the_most_recent_missions_runs_by_mode(auth_client: AsyncClient, login_as):
+    assert (await auth_client.get("/api/runs/latest-set")).status_code == 404       # 아직 아무것도 없음
+    old = (await auth_client.post("/api/missions", json=MISSION)).json()["id"]
+    await auth_client.post(f"/api/missions/{old}/runs")
+    mid = (await auth_client.post("/api/missions", json=MISSION)).json()["id"]
+    for mode in ("balanced", "recon", "rapid"):
+        await auth_client.post(f"/api/missions/{mid}/runs?mode={mode}")
+
+    user1 = await login_as("user1")                                                  # 통제관도 같은 결과를 이어서 본다
+    body = (await user1.get("/api/runs/latest-set")).json()
+    assert body["mission_id"] == mid                                                 # 이전 임무가 아니라 가장 최근 임무
+    assert [r["mode"] for r in body["runs"]] == ["balanced", "recon", "rapid"]
+    assert body["all_completed"] is False and all(r["status"] == "CREATED" for r in body["runs"])
+
+
+@pytest.mark.asyncio
+async def test_all_completed_turns_true_once_every_run_finished(auth_client: AsyncClient):
+    mid = (await auth_client.post("/api/missions", json=MISSION)).json()["id"]
+    await auth_client.post(f"/api/missions/{mid}/targets", json=[{"seq": 1, "lat": 54.45, "lon": 18.40, "patrol_duration_sec": 600}])
+    run_id = (await auth_client.post(f"/api/missions/{mid}/runs?mode=balanced")).json()["id"]
+    await auth_client.post(f"/api/runs/{run_id}/start")
+    body = (await auth_client.get("/api/runs/latest-set")).json()
+    assert body["all_completed"] is True and body["runs"][0]["status"] == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_overlay_image_is_public_png_and_validates_its_arguments(client: AsyncClient):
+    resp = await client.get("/api/map/overlay/total/3.png", params={"scale": 0.3})   # <img> 는 인증 헤더를 보낼 수 없다
+    assert resp.status_code == 200 and resp.headers["content-type"] == "image/png"
+    assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (await client.get("/api/map/overlay/total/99.png")).status_code == 404
+    assert (await client.get("/api/map/overlay/humidity/1.png")).status_code == 422
+    other = await client.get("/api/map/overlay/sensor/3.png", params={"scale": 0.3})
+    assert other.content != resp.content                                              # 종류에 따라 다른 이미지
+
+
+# ── 통제관 재생 데이터 / 공통 시드 ───────────────────────────────────────
+
+async def _two_team_run(c: AsyncClient, mode: str = "balanced") -> tuple[int, int]:
+    """UGV 2대, 목표 2곳 → 1제대(Alpha)와 2제대(Bravo)만 편성된다. (mission_id, run_id)"""
+    mid = (await c.post("/api/missions", json=MISSION)).json()["id"]
+    await c.post(f"/api/missions/{mid}/targets", json=[
+        {"seq": 1, "lat": 54.45, "lon": 18.40, "patrol_duration_sec": 600},
+        {"seq": 2, "lat": 54.42, "lon": 18.36, "patrol_duration_sec": 600},
+    ])
+    run_id = (await c.post(f"/api/missions/{mid}/runs?mode={mode}")).json()["id"]
+    return mid, run_id
+
+
+@pytest.mark.asyncio
+async def test_operator_replay_contains_only_their_own_unit(auth_client: AsyncClient, login_as):
+    _, run_id = await _two_team_run(auth_client)
+    await auth_client.post(f"/api/runs/{run_id}/start")
+
+    commander = (await auth_client.get(f"/api/runs/{run_id}/replay")).json()["mode"]
+    assert {a["team"] for a in commander["agents"]} == {"Alpha", "Bravo"}            # 지휘관은 전체
+
+    user2 = await login_as("user2")                                                  # 2제대 = Bravo
+    body = (await user2.get(f"/api/runs/{run_id}/replay")).json()["mode"]
+    assert body["agents"] and {a["team"] for a in body["agents"]} == {"Bravo"}
+    assert set(body["kpi"]["per_team"]) == {"Bravo"}
+    assert len(body["steps"]) < len(commander["steps"])                              # 다른 제대의 기록은 내려가지 않는다
+
+
+@pytest.mark.asyncio
+async def test_operator_of_a_team_that_was_not_formed_gets_404_not_a_server_error(auth_client: AsyncClient, login_as):
+    _, run_id = await _two_team_run(auth_client)
+    await auth_client.post(f"/api/runs/{run_id}/start")
+    user3 = await login_as("user3")                                                  # 3제대는 이 임무에 없다
+    resp = await user3.get(f"/api/runs/{run_id}/replay")
+    assert resp.status_code == 404
+    assert "Charlie" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_runs_of_one_mission_share_a_seed_so_same_mode_gives_the_same_result(auth_client: AsyncClient):
+    """모드 비교가 시드 운에 흔들리지 않으려면 한 임무의 run 들이 같은 난수를 써야 한다 (예전에는 시드가 run id 였다)."""
+    mid, first = await _two_team_run(auth_client)
+    second = (await auth_client.post(f"/api/missions/{mid}/runs?mode=balanced")).json()["id"]
+    await auth_client.post(f"/api/runs/{first}/start")
+    await auth_client.post(f"/api/runs/{second}/start")
+    a = (await auth_client.get(f"/api/runs/{first}/replay")).json()["mode"]
+    b = (await auth_client.get(f"/api/runs/{second}/replay")).json()["mode"]
+    assert a["steps"] == b["steps"] and a["kpi"] == b["kpi"]
