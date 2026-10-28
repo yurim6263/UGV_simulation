@@ -19,7 +19,7 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; width: 100%; height: 100%; }
 body { background: var(--bg); color: var(--text); font-family: var(--font); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
-button, input { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .5; }
 :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
@@ -315,3 +315,11 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--surface) inset; -
 .tl-axis span { position: absolute; top: 0; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); }
 .tl-body { position: relative; }
 .tl-cursor { position: absolute; top: -4px; bottom: 18px; width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; opacity: .8; }
+
+/* 문장으로 임무 입력 */
+.beta { margin-left: 6px; padding: 1px 6px; border: 1px solid var(--line2); border-radius: 4px; font-size: 10px; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.hint.nomargin { margin-top: 0; }
+.nl-text { width: 100%; margin-bottom: 8px; padding: 10px 12px; resize: vertical; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); font-size: 13px; line-height: 1.5; }
+.nl-note { margin-top: 10px; padding: 10px 12px; border: 1px solid #3fb68b55; border-radius: 8px; background: #3fb68b12; font-size: 12px; line-height: 1.55; color: #9fdcc3; }
+.nl-note ul { margin: 6px 0 0; padding-left: 18px; color: var(--soft); }
+.side code { padding: 1px 5px; border-radius: 4px; background: var(--surface2); font-size: 12px; }

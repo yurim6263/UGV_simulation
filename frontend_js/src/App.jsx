@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
-import { API_URL, clearToken, launchMission, latestRunSet, login as apiLogin, waitForRuns } from "./api";
+import { API_URL, assistantStatus, clearToken, draftMission, launchMission, latestRunSet, login as apiLogin, waitForRuns } from "./api";
 import { initialTargets, ltwrMaps, units } from "./data";
 import { useReplay } from "./replay/useReplay";
 import BaseMap from "./replay/BaseMap";
@@ -155,6 +155,66 @@ function InputMap({ targets }) {
   );
 }
 
+// 문장으로 목표를 채운다 (AI 제안). 입력칸만 채우고 실행은 사람이 누른다.
+function MissionTextBox({ targets, setTargets }) {
+  const [on, setOn] = useState(null);          // null: 확인 중, false: AI 꺼짐
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);      // { error } 또는 { assumptions, filled }
+  useEffect(() => { assistantStatus().then((s) => setOn(!!s.enabled)).catch(() => setOn(false)); }, []);
+
+  async function fill() {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const draft = await draftMission(text.trim());
+      const keys = Object.keys(targets);
+      setTargets((cur) => {
+        const next = { ...cur };
+        draft.targets.forEach((t) => {
+          const key = keys[t.team - 1];          // 제대 번호대로 채운다 (건너뛴 제대는 그대로 둔다)
+          if (key) next[key] = { ...cur[key], lat: String(t.lat), lng: String(t.lon), recon: String(t.recon_min) };
+        });
+        return next;
+      });
+      setNote({ assumptions: draft.assumptions, teams: draft.targets.map((t) => t.team).sort() });
+    } catch (e) {
+      setNote({ error: e.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="h">문장으로 입력 <small className="beta">AI 제안</small></h2>
+      <div className="card">
+        {on === false ? (
+          <p className="hint nomargin">AI 어시스턴트가 꺼져 있어 좌표를 직접 입력해야 합니다. 서버 <code>backend/.env</code>의 <code>GEMINI_API_KEY</code>를 설정하면 켜집니다.</p>
+        ) : (
+          <>
+            <textarea
+              className="nl-text" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={3}
+              placeholder="예: 1제대는 그디니아, 2제대는 공항 근처, 3제대는 출발지에서 북동쪽 3km. 정찰은 각 30분"
+              aria-label="임무 문장" disabled={on === null}
+            />
+            <button className="btn block" onClick={fill} disabled={busy || !text.trim() || on === null}>{busy ? "해석하는 중…" : "목표 채우기"}</button>
+            {note?.error && <p className="form-error" role="alert">{note.error}</p>}
+            {note && !note.error && (
+              <div className="nl-note" role="status">
+                <b>{note.teams.map((t) => `${t}제대`).join(", ")} 목표를 채웠습니다. 좌표를 확인한 뒤 실행하세요.</b>
+                {note.assumptions.length > 0 && <ul>{note.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>}
+              </div>
+            )}
+            <p className="hint">장소 좌표는 대략적인 값(±1km)입니다. AI는 입력칸만 채우고 임무를 실행하지 않습니다.</p>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }) {
   const update = (key, field, value) => setTargets((current) => ({ ...current, [key]: { ...current[key], [field]: value } }));
   return (
@@ -170,18 +230,21 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
           <div className="tip">입력한 좌표가 번호 핀으로 표시됩니다. 배경은 시작 시각의 위험도입니다.</div>
         </section>
         <aside className="side">
-          <h2 className="h">정찰 목표</h2>
-          <div className="card">
-            {Object.entries(targets).map(([key, t], i) => (
-              <div className="tgt" key={key}>
-                <span className="no" style={{ background: TEAM_COLOR[USER_TEAM[key]] }}>{i + 1}</span>
-                <label className="f"><small>위도</small><input value={t.lat} onChange={(e) => update(key, "lat", e.target.value)} inputMode="decimal" aria-label={`${t.title} 위도`} /></label>
-                <label className="f"><small>경도</small><input value={t.lng} onChange={(e) => update(key, "lng", e.target.value)} inputMode="decimal" aria-label={`${t.title} 경도`} /></label>
-                <label className="f"><small>정찰(분)</small><input value={t.recon} onChange={(e) => update(key, "recon", e.target.value)} inputMode="numeric" aria-label={`${t.title} 정찰 시간`} /></label>
-              </div>
-            ))}
-          </div>
-          <p className="hint">실행하면 균형·정밀·신속 3가지 모드를 같은 조건으로 한 번씩 시뮬레이션합니다. 목표는 작전 구역(그단스크 인근) 안이어야 합니다.</p>
+          <MissionTextBox targets={targets} setTargets={setTargets} />
+          <section>
+            <h2 className="h">정찰 목표</h2>
+            <div className="card">
+              {Object.entries(targets).map(([key, t], i) => (
+                <div className="tgt" key={key}>
+                  <span className="no" style={{ background: TEAM_COLOR[USER_TEAM[key]] }}>{i + 1}</span>
+                  <label className="f"><small>위도</small><input value={t.lat} onChange={(e) => update(key, "lat", e.target.value)} inputMode="decimal" aria-label={`${t.title} 위도`} /></label>
+                  <label className="f"><small>경도</small><input value={t.lng} onChange={(e) => update(key, "lng", e.target.value)} inputMode="decimal" aria-label={`${t.title} 경도`} /></label>
+                  <label className="f"><small>정찰(분)</small><input value={t.recon} onChange={(e) => update(key, "recon", e.target.value)} inputMode="numeric" aria-label={`${t.title} 정찰 시간`} /></label>
+                </div>
+              ))}
+            </div>
+          </section>
+          <p className="hint nomargin">실행하면 균형·정밀·신속 3가지 모드를 같은 조건으로 한 번씩 시뮬레이션합니다. 목표는 작전 구역(그단스크 인근) 안이어야 합니다.</p>
           <button className="btn primary block big" onClick={onSubmit}>시뮬레이션 실행</button>
         </aside>
       </div>

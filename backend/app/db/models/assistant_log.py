@@ -21,6 +21,7 @@ class AssistantLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="ask", server_default="ask")   # ask | mission_draft | sitrep
     question: Mapped[str] = mapped_column(String(300), nullable=False)
     model: Mapped[str] = mapped_column(String(80), nullable=False)
     tools: Mapped[list] = mapped_column(JSONType, nullable=False, default=list)       # 호출한 도구 이름들

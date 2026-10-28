@@ -117,3 +117,6 @@ export const overlayUrl = (kind, turn) => `${API_URL}/api/map/overlay/${kind}/${
 export const assistantStatus = () => request("/api/assistant/status");
 // 반환: { answer, evidences: [{id, tool, args, result, denied, error}], warnings, model, latency_ms }
 export const askAssistant = (question) => request("/api/assistant/ask", { method: "POST", body: { question } });
+
+// 문장 → 정찰 목표 제안 (지휘관 전용). 반환: { targets: [{lat, lon, recon_min, label}], assumptions, model, latency_ms }
+export const draftMission = (text) => request("/api/assistant/mission-draft", { method: "POST", body: { text } });

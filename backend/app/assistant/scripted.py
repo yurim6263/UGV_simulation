@@ -32,7 +32,7 @@ class ScriptedModel:
         return turn(messages) if callable(turn) else turn
 
 
-def call(name: str, **args) -> ModelTurn:
+def call(name: str, /, **args) -> ModelTurn:
     return ModelTurn(tool_calls=[ToolCall(name, args)])
 
 
