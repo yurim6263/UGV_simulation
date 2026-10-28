@@ -14,7 +14,7 @@ const starIcon = (color) => L.divIcon({
 });
 
 // 지도는 그리기만 한다. 모드·오버레이·시간·제대 필터·선택은 모두 밖(useReplay)에서 온다.
-export default function ReplayMap({ replay, allowedTeams }) {
+export default function ReplayMap({ replay, allowedTeams, compact = false }) {
   const { overlayUrl, scenario, model, frame, overlay, teams, selected, setSelected } = replay;
   const turn = model.frames[frame].turn;
   const nextTurn = Math.min(turn + 1, scenario.turns - 1);
@@ -39,7 +39,10 @@ export default function ReplayMap({ replay, allowedTeams }) {
   }, [model]);
 
   return (
-    <MapContainer bounds={scenario.bounds} boundsOptions={{ padding: [6, 6] }} zoomControl attributionControl={false}>
+    <MapContainer
+      bounds={scenario.bounds} zoomControl attributionControl={false} zoomSnap={0.1} zoomDelta={0.5}
+      boundsOptions={{ paddingTopLeft: [4, 4], paddingBottomRight: [4, compact ? 4 : 84] }}
+    >
       <BaseMap />
       <ImageOverlay
         url={overlayUrl(overlay, turn)}

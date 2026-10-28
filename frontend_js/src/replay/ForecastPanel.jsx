@@ -63,7 +63,7 @@ export default function ForecastPanel({ replay, allowedTeams }) {
         </div>
       )}
       <div className="replay-map mini-map">
-        <ReplayMap replay={forecastReplay} allowedTeams={allowedTeams} />
+        <ReplayMap replay={forecastReplay} allowedTeams={allowedTeams} compact />
         {info && !info.available && <div className="fc-none">예보 없음<small>{info.reason}</small></div>}
       </div>
       <p className="hint tight">

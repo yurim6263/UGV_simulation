@@ -143,7 +143,7 @@ const validPoint = (t) => Number.isFinite(Number(t.lat)) && Number.isFinite(Numb
 
 function InputMap({ targets }) {
   return (
-    <MapContainer bounds={MAP_BOUNDS} boundsOptions={{ padding: [8, 8] }} zoomControl attributionControl={false}>
+    <MapContainer bounds={MAP_BOUNDS} boundsOptions={{ padding: [4, 4] }} zoomControl attributionControl={false} zoomSnap={0.1} zoomDelta={0.5}>
       <BaseMap />
       <ImageOverlay url={`${API_URL}/api/map/tactical/terrain-image`} bounds={MAP_BOUNDS} opacity={0.55} />
       <ImageOverlay url={`${API_URL}/api/map/tactical/cost-image?layer=risk`} bounds={MAP_BOUNDS} opacity={0.6} />
