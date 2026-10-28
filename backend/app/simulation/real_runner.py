@@ -65,6 +65,7 @@ def even_split(total: int, parts: int) -> tuple:
 
 def build_scenario(mission: dict, mode: str, weather_scale: float) -> tuple[ScenarioSpec, Genes]:
     """임무 정보 → (ScenarioSpec, Genes). 목표 수만큼 제대를 만들고(최대 3) UGV 를 나눠 배정한다."""
+    explicit = bool(mission["targets"])             # 지휘관이 목표를 입력했는가 (아니면 기본 목표)
     pois = [tuple(p) for p in mission["targets"]] or list(DEFAULT_POIS)
     n_teams = max(1, min(3, len(pois), mission["total_ugv"]))
     pois = pois[:n_teams]
@@ -75,7 +76,10 @@ def build_scenario(mission: dict, mode: str, weather_scale: float) -> tuple[Scen
     )
     preset_formation = MODE_PRESETS[mode]["formation"]
     if n_teams == len(preset_formation) and sum(preset_formation) == mission["total_ugv"]:
-        formation, assignment = preset_formation, MODE_PRESETS[mode]["assignment"]
+        formation = preset_formation
+        # 최적화가 찾은 "제대 → 목표" 배정(순열)은 기본 목표(팀원 시나리오)에 맞춰 찾은 것이다. 지휘관이 목표를 입력했으면
+        # 입력 순서가 곧 배정이다 (목표 i 는 i제대). 그렇지 않으면 "2제대 목표"로 입력한 곳에 다른 제대가 간다.
+        assignment = tuple(range(n_teams)) if explicit else MODE_PRESETS[mode]["assignment"]
     else:                                   # 편성이 프리셋과 다르면 균등 분배, 제대 i → 목표 i
         formation, assignment = even_split(mission["total_ugv"], n_teams), tuple(range(n_teams))
     # 정찰 시간: 제대 i 가 향하는 목표의 patrol_duration_sec 를 턴(10분)으로 올림
