@@ -14,9 +14,9 @@ export function KpiSummary({ replay, team }) {
   return (
     <section className="kpis">
       <p className="kpis-basis">{team ? TEAM_UNIT[team] : "전체"} · 시뮬레이션 1회 기록 기준</p>
-      {KPI_ROWS.map(([label, get, unit]) => (
-        <div className={`kpi ${label.startsWith("SOS") ? "alert" : ""}`} key={label}>
-          <small>{label}</small>
+      {KPI_ROWS.map(([label, get, unit, hint], i) => (
+        <div className={`kpi ${label.startsWith("SOS") ? "alert" : ""} ${i === KPI_ROWS.length - 1 ? "wide" : ""}`} key={label} title={hint}>
+          <small>{label}{hint && <span className="hint-mark" aria-hidden="true"> ⓘ</span>}</small>
           <b>{get(cur)}<u>{unit}</u></b>
           <em>
             {scenario.modes.map((m) => (
@@ -25,6 +25,7 @@ export function KpiSummary({ replay, team }) {
           </em>
         </div>
       ))}
+      <p className="kpis-note">상대 고위험 구간은 순위로 나눈 등급(날씨 강도와 무관), 평균 위험도는 0~1 절대값입니다.</p>
     </section>
   );
 }

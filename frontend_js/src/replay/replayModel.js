@@ -128,14 +128,16 @@ export function scopedKpi(model, team) {
     if (a.kind === "UGV" && (!team || a.team === team)) ugvSteps.push(...t);
   });
   const red = ugvSteps.length ? ugvSteps.filter((s) => s.grade === "R").length / ugvSteps.length : 0;
+  // 절대 위험도: UGV 가 지나간 칸의 종합 위험도(0~1) 평균. 등급(G/A/R)과 달리 날씨 강도를 바꾸면 실제로 달라진다.
+  const risk = ugvSteps.length ? ugvSteps.reduce((sum, s) => sum + s.total, 0) / ugvSteps.length : 0;
   if (!team) {
-    return { arrived: k.ugv_arrived, total: k.ugv_total, turns: k.mission_turns, sos: k.sos_events, interventions, wait: k.wait_turns_mean, red };
+    return { arrived: k.ugv_arrived, total: k.ugv_total, turns: k.mission_turns, sos: k.sos_events, interventions, wait: k.wait_turns_mean, red, risk };
   }
   const pt = k.per_team[team];
-  if (!pt) return { arrived: 0, total: 0, turns: k.turns, sos: 0, interventions, wait: 0, red };   // 이 모드에 없는 제대
+  if (!pt) return { arrived: 0, total: 0, turns: k.turns, sos: 0, interventions, wait: 0, red, risk };   // 이 모드에 없는 제대
   return {
     arrived: pt.arrived, total: pt.ugv, turns: pt.arrive_turn == null ? k.turns : pt.arrive_turn + 1,
-    sos: pt.sos, interventions, wait: pt.wait_turns_mean, red,
+    sos: pt.sos, interventions, wait: pt.wait_turns_mean, red, risk,
   };
 }
 
@@ -145,7 +147,8 @@ export const KPI_ROWS = [
   ["SOS 발생", (k) => k.sos, "건"],
   ["운용자 개입", (k) => k.interventions, "회"],
   ["평균 개입 대기", (k) => Math.round(k.wait * 10), "분"],
-  ["고위험(적색) 구간", (k) => Math.round(k.red * 100), "%"],
+  ["평균 위험도", (k) => k.risk.toFixed(2), "(0~1)", "UGV 가 지나간 칸의 종합 위험도 평균. 절대값이라 날씨 강도에 따라 달라진다."],
+  ["상대 고위험 구간", (k) => Math.round(k.red * 100), "%", "전 시간대 위험도의 상위 30% 구간(R)에서 보낸 UGV 기록 비율. 순위로 나눈 상대 등급이라 날씨 강도와 무관하다."],
 ];
 
 // 제대별 고위험(적색) 구간 비율: UGV 이동 기록 중 위험 등급 R 인 비율

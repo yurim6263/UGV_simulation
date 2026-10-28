@@ -53,9 +53,11 @@ function Brand({ sub }) {
 function RiskLegend() {
   return (
     <div className="legend">
-      <div><i style={{ background: GRADE_COLOR.G }} />G 안전 (옅게)</div>
-      <div><i style={{ background: GRADE_COLOR.A }} />A 주의</div>
-      <div><i style={{ background: GRADE_COLOR.R }} />R 고위험</div>
+      <b>상대 위험 등급</b>
+      <div><i style={{ background: GRADE_COLOR.G }} />G 하위 30% (옅게)</div>
+      <div><i style={{ background: GRADE_COLOR.A }} />A 중간 40%</div>
+      <div><i style={{ background: GRADE_COLOR.R }} />R 상위 30%</div>
+      <small>전 시간대 기준 순위 · 날씨 강도와 무관</small>
     </div>
   );
 }
@@ -353,7 +355,7 @@ function MainDashboard({ account, onLogout }) {
                   </Tag>
                 );
               })}
-              <p className="hint tight">막대: 위 도착률(제대 색) · 아래 고위험 구간 비율(빨강)</p>
+              <p className="hint tight">막대: 위 도착률(제대 색) · 아래 상대 고위험 구간 비율(빨강)</p>
             </section>
           )}
           {account.role === "commander" && <button className="btn primary block big push" onClick={() => notify("임무를 통제관에게 하달했습니다.")}>임무 하달</button>}
