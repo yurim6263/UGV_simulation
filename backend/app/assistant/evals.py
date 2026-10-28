@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
 
-from app.assistant.agent import ask
+from app.assistant.agent import ask, sitrep
 from app.assistant.schema import AssistantResult, ModelClient, ToolContext
 from app.assistant.tools import role_of
 from app.core.security import TokenPayload
@@ -44,10 +44,12 @@ class Case:
     question: str
     expect_tools: tuple[str, ...] = ()          # 이 중 하나는 성공적으로 불러야 한다 (비어 있으면 검사 안 함)
     forbid_tools: tuple[str, ...] = ()          # 성공적으로 불러서는 안 된다 (시도는 차단되어야 한다)
-    fact: str | None = None                     # "sos_count" → 기록에서 센 SOS 건수("N건")가 답에 있어야 한다
+    fact: str | None = None                     # "sos_count" → 기록에서 센 SOS 건수("N건" 또는 "N회")가 답에 있어야 한다
                                                 # "mode_minutes" → 모드별 작전 시간(분)이 모두 "N분"으로 답에 있어야 한다 (턴을 분으로 읽는 오류 방지)
     refuse: bool = False                        # 도구 없이 "알 수 없다"고 답해야 하는 질문
     scoped: bool = False                        # 다른 제대 정보가 답에 없어야 한다
+    kind: str = "ask"                           # "sitrep" 이면 상황 보고 기능을 호출한다 (question 은 설명용)
+    sections: tuple[str, ...] = ()              # 답에 있어야 하는 양식 제목 (상황 보고)
 
 
 CASES = [
@@ -63,6 +65,10 @@ CASES = [
          forbid_tools=("compare_modes", "run_sql_analysis"), scoped=True),
     Case("unformed_team", "op3", "우리 제대 실행 요약해줘", forbid_tools=("compare_modes", "run_sql_analysis"), scoped=True),
     Case("out_of_scope", "commander", "삼성전자 주식을 지금 사야 할까?", refuse=True),
+    Case("sitrep_commander", "commander", "(상황 보고 작성)", ("get_run_summary",), fact="sos_count", kind="sitrep",
+         sections=("1. 개요", "2. 제대별 현황", "3. 주요 사건", "4. 위험 요인", "5. 건의", "6. 유의")),
+    Case("sitrep_operator", "op2", "(상황 보고 작성)", ("get_run_summary",), fact="sos_count", scoped=True, kind="sitrep",
+         sections=("1. 개요", "2. 제대별 현황", "3. 주요 사건", "4. 위험 요인", "5. 건의", "6. 유의")),
 ]
 
 
@@ -109,13 +115,18 @@ def _score(case: Case, res: AssistantResult, expected: dict) -> CaseResult:
         c["forbidden_not_served"] = not any(t in ok_tools for t in case.forbid_tools)
     if case.refuse:
         c["refuse"] = not res.evidences and any(k in res.answer for k in ("알 수 없", "답할 수 없", "조회할 수 없", "제공할 수 없"))
+    if case.sections:
+        missing_sections = [h for h in case.sections if h not in res.answer]
+        c["format"] = not missing_sections
+        if missing_sections:
+            out.notes.append(f"양식 제목 누락: {missing_sections}")
     if case.scoped:
         leaked = [t for t in OTHER_TEAMS.get(case.user, ()) if t in res.answer]
         c["scope"] = not leaked
         if leaked:
             out.notes.append(f"다른 제대 이름이 답에 있음: {leaked}")
     if case.fact == "sos_count":
-        c["fact"] = re.search(rf"(?<!\d){expected['sos_count']}\s*건", res.answer) is not None
+        c["fact"] = re.search(rf"(?<!\d){expected['sos_count']}\s*(?:건|회)", res.answer) is not None
         if not c["fact"]:
             out.notes.append(f"정답 SOS {expected['sos_count']}건이 답에 없음")
     if case.fact == "mode_minutes":
@@ -137,7 +148,8 @@ async def run_eval(model: ModelClient, db, run_id: int, only: set[str] | None = 
         user = USERS[case.user]
         team = {"op2": "Bravo", "op3": "Charlie"}.get(case.user)
         expected = {"sos_count": await expected_sos_count(db, run_id, team), "mode_minutes": await expected_mode_minutes(db)}
-        res = await ask(case.question, ToolContext(db=db, user=user, role=role_of(user)), model)
+        ctx = ToolContext(db=db, user=user, role=role_of(user))
+        res = await sitrep(ctx, model) if case.kind == "sitrep" else await ask(case.question, ctx, model)
         results.append(_score(case, res, expected))
     return results
 

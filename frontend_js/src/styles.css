@@ -323,3 +323,13 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--surface) inset; -
 .nl-note { margin-top: 10px; padding: 10px 12px; border: 1px solid #3fb68b55; border-radius: 8px; background: #3fb68b12; font-size: 12px; line-height: 1.55; color: #9fdcc3; }
 .nl-note ul { margin: 6px 0 0; padding-left: 18px; color: var(--soft); }
 .side code { padding: 1px 5px; border-radius: 4px; background: var(--surface2); font-size: 12px; }
+
+/* 상황 보고 */
+.ai-sugg .sitrep-btn { border-color: var(--text); color: var(--text); font-weight: 600; }
+.ai-sugg .sitrep-btn:disabled { opacity: .5; }
+.copy-btn { margin-top: 10px; padding: 5px 10px; border: 1px solid var(--line2); border-radius: 6px; background: transparent; color: var(--soft); font-size: 11px; }
+.kpis.compact { display: flex; gap: 8px; padding: 10px 16px; }
+.kpis.compact span { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.kpis.compact small { display: block; font-size: 10.5px; color: var(--muted); }
+.kpis.compact b { font-size: 16px; font-weight: 500; }
+.kpis.compact u { margin-left: 2px; font-size: 11px; text-decoration: none; color: var(--muted); font-weight: 400; }

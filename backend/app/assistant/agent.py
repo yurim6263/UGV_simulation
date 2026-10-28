@@ -41,10 +41,23 @@ def system_prompt(ctx: ToolContext) -> str:
     return SYSTEM_PROMPT.format(who=who)
 
 
+SITREP_FORMAT = """
+
+[상황 보고 양식] 아래 번호와 제목을 그대로 쓰고, 각 항목은 짧은 문장이나 목록으로 쓴다. 숫자와 사실마다 근거 번호를 붙인다.
+상황 보고
+1. 개요: 모드, 보고 범위(전체 또는 담당 제대), 도착 UGV, 작전 시간(분)
+2. 제대별 현황: 제대마다 도착 UGV, SOS, 도착 시각. 조회한 제대만 쓴다.
+3. 주요 사건: SOS와 운용자 개입을 시각순으로 최대 5건 (시각은 분 단위).
+4. 위험 요인: 평균 위험도(0~1 절대값)와 상대 고위험 구간 비율을 구분해서 쓴다. 상대 고위험 구간 비율은 순위로 나눈 등급이라 절대 위험이 아니다.
+5. 건의: 사람이 판단할 제안 1~3개. 조회한 숫자에서 직접 도출되는 것만 쓴다. 근거가 없으면 "특이 건의 없음".
+6. 유의: 시뮬레이션 1회 기록이며 통계 평균이 아니라는 점, 조회하지 못한 항목.
+조회하지 못한 항목은 지어내지 말고 "조회 불가"라고 쓴다. 보고서 안에서도 권한 밖 제대 정보를 쓰지 않는다."""
+
+
 async def ask(question: str, ctx: ToolContext, model: ModelClient, *, max_steps: int = MAX_STEPS,
-              max_tool_calls: int = MAX_TOOL_CALLS) -> AssistantResult:
+              max_tool_calls: int = MAX_TOOL_CALLS, extra_system: str = "") -> AssistantResult:
     started = time.perf_counter()
-    system = system_prompt(ctx)
+    system = system_prompt(ctx) + extra_system
     tools = visible_tools(ctx.role)
     messages: list[Message] = [Message(role="user", text=question)]
     evidences: list[Evidence] = []
@@ -91,3 +104,13 @@ async def ask(question: str, ctx: ToolContext, model: ModelClient, *, max_steps:
             warnings.append(f"권한 없는 도구 호출 시도가 차단됨: {ev.tool}")
     return AssistantResult(answer=answer, evidences=evidences, warnings=warnings, steps=steps, model=model.name,
                            latency_ms=int((time.perf_counter() - started) * 1000), usage=usage, grounded=grounded)
+
+
+MODE_LABEL = {"balanced": "균형", "recon": "정밀", "rapid": "신속"}
+
+
+async def sitrep(ctx: ToolContext, model: ModelClient, mode: str = "balanced") -> AssistantResult:
+    """실행 기록에서 근거가 붙은 상황 보고 초안을 만든다. 질문과 같은 도구·권한·근거 검증을 거친다 (통제관은 담당 제대 범위)."""
+    question = (f"[상황 보고] 가장 최근 임무의 {MODE_LABEL[mode]} 모드({mode}) 실행에 대해 상황 보고를 작성하라. "
+                f"get_run_summary 와 get_run_events 를 mode={mode} 로 조회해서 쓴다.")
+    return await ask(question, ctx, model, extra_system=SITREP_FORMAT, max_steps=8, max_tool_calls=10)

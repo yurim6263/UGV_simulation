@@ -8,13 +8,14 @@ POST /api/assistant/ask      — 질문 → 도구 호출로 근거를 모아 �
 """
 
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DBSession, require_roles
 from app.assistant import factory
-from app.assistant.agent import ask
+from app.assistant.agent import ask, sitrep
 from app.assistant.mission_intent import MissionDraftError, propose
 from app.assistant.schema import ModelError, ToolContext
 from app.assistant.tools import role_of, visible_tools
@@ -58,16 +59,15 @@ async def assistant_status(user: CurrentUser):
     }
 
 
-@router.post("/ask", response_model=AskResponse, summary="어시스턴트에게 질문")
-@limiter.limit(settings.assistant_rate_limit)
-async def ask_assistant(request: Request, body: AskRequest, db: DBSession, user: CurrentUser):
+async def _run_and_log(db, user, kind: str, label: str, run):
+    """ask/sitrep 공통: 설정 확인 → 실행 → 호출 기록 → 응답. run 은 ToolContext 와 모델을 받아 AssistantResult 를 돌려주는 함수."""
     if not factory.is_configured():
         raise HTTPException(status_code=503, detail="AI 어시스턴트가 설정되지 않았습니다 (서버에 GEMINI_API_KEY 가 필요합니다).")
     role = role_of(user)
     ctx = ToolContext(db=db, user=user, role=role)
-    log = AssistantLog(user_id=str(user.sub), role=role, question=body.question[:300], model="", tools=[])
+    log = AssistantLog(user_id=str(user.sub), role=role, kind=kind, question=label[:300], model="", tools=[])
     try:
-        result = await ask(body.question, ctx, factory.get_model())
+        result = await run(ctx, factory.get_model())
     except ModelError as exc:
         logger.error("assistant model error: %s", exc)
         log.error = str(exc)[:200]
@@ -89,6 +89,22 @@ async def ask_assistant(request: Request, body: AskRequest, db: DBSession, user:
         answer=result.answer, warnings=result.warnings, model=result.model, latency_ms=result.latency_ms,
         evidences=[EvidenceOut(id=e.id, tool=e.tool, args=e.args, result=e.result, denied=e.denied, error=e.error) for e in result.evidences],
     )
+
+
+@router.post("/ask", response_model=AskResponse, summary="어시스턴트에게 질문")
+@limiter.limit(settings.assistant_rate_limit)
+async def ask_assistant(request: Request, body: AskRequest, db: DBSession, user: CurrentUser):
+    return await _run_and_log(db, user, "ask", body.question, lambda ctx, model: ask(body.question, ctx, model))
+
+
+class SitrepRequest(BaseModel):
+    mode: Literal["balanced", "recon", "rapid"] = "balanced"
+
+
+@router.post("/sitrep", response_model=AskResponse, summary="상황 보고 초안 작성 (근거 번호 포함, 통제관은 담당 제대 범위)")
+@limiter.limit(settings.assistant_rate_limit)
+async def make_sitrep(request: Request, body: SitrepRequest, db: DBSession, user: CurrentUser):
+    return await _run_and_log(db, user, "sitrep", f"상황 보고 ({body.mode})", lambda ctx, model: sitrep(ctx, model, body.mode))
 
 
 # ── 자연어 임무 입력 ─────────────────────────────────────────────────────

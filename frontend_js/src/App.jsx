@@ -442,7 +442,7 @@ function MainDashboard({ account, onLogout }) {
         </div>
 
         <aside className="right">
-          {model ? <KpiSummary replay={replay} team={myTeam} /> : <section className="kpis"><p className="kpis-basis">임무 요약</p></section>}
+          {model ? <KpiSummary replay={replay} team={myTeam} compact={tab === "ai"} /> : <section className="kpis"><p className="kpis-basis">임무 요약</p></section>}
           <div className="tabs" role="tablist">
             {tabs.map(([key, label]) => (
               <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>
@@ -453,7 +453,7 @@ function MainDashboard({ account, onLogout }) {
             {model && tab === "units" && <AgentTable replay={replay} allowedTeams={allowedTeams} />}
             {tab === "pareto" && <ParetoPanel onPickMode={replay.setMode} />}
             {tab === "ltwr" && <LtwrPanel />}
-            {tab === "ai" && <AssistantPanel role={account.role} />}
+            {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode} />}
           </div>
         </aside>
       </div>

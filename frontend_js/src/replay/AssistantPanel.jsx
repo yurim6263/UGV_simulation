@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { assistantStatus, askAssistant } from "../api";
+import { assistantStatus, askAssistant, requestSitrep } from "../api";
 
 const SUGGESTIONS = {
   commander: ["이번 실행에서 SOS는 몇 건이야?", "균형, 정밀, 신속 모드를 비교해줘", "최적화 결과에서 어떤 편성이 좋았어?", "예보 정확도는 어때?"],
   operator: ["우리 제대 SOS는 몇 건이야?", "우리 제대 SOS는 언제 발생했어?", "예보 정확도는 어때?"],
 };
+
+const SERVER_MODE = { balance: "balanced", explore: "recon", rush: "rapid" };
+const MODE_LABEL = { balance: "균형", explore: "정밀", rush: "신속" };
 
 // 답변 속 [E1] 을 근거 칩으로 바꾼다. 누르면 해당 도구 결과가 펼쳐진다.
 function Answer({ text, onCite }) {
@@ -29,7 +32,7 @@ function Evidence({ ev, open }) {
 }
 
 // AI 어시스턴트: 질문 → 서버가 도구로 기록을 조회해 근거와 함께 답한다 (읽기 전용).
-export default function AssistantPanel({ role }) {
+export default function AssistantPanel({ role, mode = "balance" }) {
   const [status, setStatus] = useState(null);
   const [items, setItems] = useState([]);      // {q, a?, error?, pending?}
   const [text, setText] = useState("");
@@ -39,19 +42,28 @@ export default function AssistantPanel({ role }) {
   useEffect(() => { assistantStatus().then(setStatus).catch(() => setStatus({ enabled: false })); }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [items]);
 
-  async function send(question) {
-    const q = question.trim();
-    if (!q || items.some((it) => it.pending)) return;
-    setText("");
-    setItems((cur) => [...cur, { q, pending: true }]);
+  // 질문(askAssistant) 또는 상황 보고(requestSitrep)를 보내고 결과를 대화에 붙인다
+  async function run(q, call, sitrep = false) {
+    if (items.some((it) => it.pending)) return;
+    setItems((cur) => [...cur, { q, pending: true, sitrep }]);
     const index = items.length;
     try {
-      const a = await askAssistant(q);
-      setItems((cur) => cur.map((it, i) => (i === index ? { q, a } : it)));
+      const a = await call();
+      setItems((cur) => cur.map((it, i) => (i === index ? { q, a, sitrep } : it)));
     } catch (e) {
-      setItems((cur) => cur.map((it, i) => (i === index ? { q, error: e.message } : it)));
+      setItems((cur) => cur.map((it, i) => (i === index ? { q, error: e.message, sitrep } : it)));
     }
   }
+  function send(question) {
+    const q = question.trim();
+    if (!q) return;
+    setText("");
+    run(q, () => askAssistant(q));
+  }
+  function makeSitrep() {
+    run(`상황 보고 작성 · ${MODE_LABEL[mode]} 모드`, () => requestSitrep(SERVER_MODE[mode]), true);
+  }
+  const copy = (text) => navigator.clipboard?.writeText(text).catch(() => {});
 
   if (status && !status.enabled) {
     return (
@@ -75,6 +87,7 @@ export default function AssistantPanel({ role }) {
             {it.a && (
               <div className="ai-a">
                 <Answer text={it.a.answer} onCite={(id) => setOpenEv((cur) => ({ ...cur, [`${i}:${id}`]: !cur[`${i}:${id}`] }))} />
+                {it.sitrep && <button className="copy-btn" onClick={() => copy(it.a.answer)}>보고 내용 복사</button>}
                 {it.a.warnings.length > 0 && (
                   <ul className="ai-warn">{it.a.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
                 )}
@@ -87,6 +100,7 @@ export default function AssistantPanel({ role }) {
         <div ref={endRef} />
       </div>
       <div className="ai-sugg">
+        <button className="sitrep-btn" onClick={makeSitrep} disabled={items.some((it) => it.pending)}>상황 보고 작성 ({MODE_LABEL[mode]})</button>
         {(SUGGESTIONS[role === "commander" ? "commander" : "operator"]).map((s) => <button key={s} onClick={() => send(s)}>{s}</button>)}
       </div>
       <form className="ai-ask" onSubmit={(e) => { e.preventDefault(); send(text); }}>

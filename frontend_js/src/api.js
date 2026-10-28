@@ -120,3 +120,6 @@ export const askAssistant = (question) => request("/api/assistant/ask", { method
 
 // 문장 → 정찰 목표 제안 (지휘관 전용). 반환: { targets: [{lat, lon, recon_min, label}], assumptions, model, latency_ms }
 export const draftMission = (text) => request("/api/assistant/mission-draft", { method: "POST", body: { text } });
+
+// 상황 보고 초안 (근거 번호 포함). mode: balanced | recon | rapid. 통제관은 서버가 담당 제대 범위로 만든다.
+export const requestSitrep = (mode) => request("/api/assistant/sitrep", { method: "POST", body: { mode } });

@@ -116,6 +116,8 @@ async def get_run_summary(ctx: ToolContext, args: dict) -> dict:
         raise _run_error(exc) from exc
     k = mode_data["kpi"]
     scope = "전체" if data.team is None else f"{data.team} 제대만"
+    ugv = data.frame[data.frame.agent_id.str.startswith("UGV")]
+    mean_risk = ugv["normalized_c_total"].mean() if len(ugv) else None
     out = {
         "run_id": run_id, "mode": data.run.selected_mode or "balanced", "scope": scope,
         "basis": "이 시뮬레이션 1회의 이동 기록에서 집계한 값 (통계 평균이 아님)",
@@ -124,6 +126,8 @@ async def get_run_summary(ctx: ToolContext, args: dict) -> dict:
         "sos_events": k["sos_events"], "sos_mobility": k["sos_mobility"], "sos_sensor": k["sos_sensor"],
         "interventions": k["interventions"], "mean_wait_minutes": round(k["wait_turns_mean"] * 10, 1),
         "red_step_pct": round(k["red_step_ratio"] * 100, 1),
+        "red_step_note": "red_step_pct 는 전 시간대 위험도 상위 30%(상대 등급 R)에서 보낸 UGV 기록 비율이다. 절대 위험이 아니다.",
+        "mean_risk_0_1": None if mean_risk is None else round(float(mean_risk), 3),
         "per_team": {t: {"ugv": v["ugv"], "arrived": v["arrived"], "sos": v["sos"],
                          "arrive_minutes": None if v["arrive_turn"] is None else (v["arrive_turn"] + 1) * 10}
                      for t, v in k["per_team"].items()},
@@ -212,7 +216,7 @@ BOTH = ("commander", "operator")
 TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("list_runs", "가장 최근 임무의 실행(run) 목록과 모드, 상태를 본다. 어떤 run_id 가 있는지 모를 때 먼저 쓴다.",
              {"type": "object", "properties": {}}, BOTH, list_runs),
-    ToolSpec("get_run_summary", "한 실행의 요약 지표(도착 UGV, 작전 시간, SOS, 운용자 개입, 평균 개입 대기, 고위험 구간 비율, 제대별 결과). "
+    ToolSpec("get_run_summary", "한 실행의 요약 지표(도착 UGV, 작전 시간, SOS, 운용자 개입, 평균 개입 대기, 상대 고위험 구간 비율, 평균 위험도, 제대별 결과). "
              "통제관은 담당 제대 값만 받는다. 시뮬레이션 1회의 기록이다.",
              {"type": "object", "properties": _RUN_ARGS}, BOTH, get_run_summary),
     ToolSpec("get_run_events", "한 실행의 SOS/운용자 개입 사건을 시간순으로 본다 (언제, 누가, 무슨 일). 통제관은 담당 제대만.",

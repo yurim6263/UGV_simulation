@@ -4,13 +4,23 @@ import {
 } from "./replayModel";
 
 // 임무 요약: 선택한 모드의 KPI 카드 + 다른 모드와 한눈에 비교
-export function KpiSummary({ replay, team }) {
+export function KpiSummary({ replay, team, compact = false }) {
   const { models, mode, scenario } = replay;
   const all = useMemo(
     () => Object.fromEntries(Object.entries(models).map(([key, m]) => [key, scopedKpi(m, team)])),
     [models, team],
   );
   const cur = all[mode];
+  if (compact) {                       // AI 탭처럼 세로 공간이 필요할 때: 핵심 값만 한 줄로
+    const keep = ["도착 UGV", "SOS 발생", "평균 위험도"];
+    return (
+      <section className="kpis compact" aria-label="임무 요약">
+        {KPI_ROWS.filter(([label]) => keep.includes(label)).map(([label, get, unit]) => (
+          <span key={label}><small>{label}</small><b>{get(cur)}<u>{unit.startsWith("(") ? "" : unit}</u></b></span>
+        ))}
+      </section>
+    );
+  }
   return (
     <section className="kpis">
       <p className="kpis-basis">{team ? TEAM_UNIT[team] : "전체"} · 시뮬레이션 1회 기록 기준</p>

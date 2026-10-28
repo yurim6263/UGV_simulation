@@ -22,9 +22,11 @@ class ScriptedModel:
         self._turns = list(turns)
         self.calls: list[list[Message]] = []          # 모델이 받은 대화 기록 (검증용)
         self.tools_seen: list[list[str]] = []
+        self.systems: list[str] = []
 
     async def next(self, system: str, messages: list[Message], tools: list[ToolSpec]) -> ModelTurn:
         self.calls.append(list(messages))
+        self.systems.append(system)
         self.tools_seen.append([t.name for t in tools])
         if not self._turns:
             raise AssertionError("ScriptedModel 의 준비된 턴이 부족합니다.")
@@ -69,14 +71,38 @@ class RuleBasedModel:
     async def next(self, system: str, messages: list[Message], tools: list[ToolSpec]) -> ModelTurn:
         allowed = {t.name for t in tools}
         if any(m.role == "tool" for m in messages):
-            return ModelTurn(text=self._answer(messages))
+            first = next(m.text for m in messages if m.role == "user")
+            return ModelTurn(text=self._sitrep(messages) if first.startswith("[상황 보고]") else self._answer(messages))
         question = next(m.text for m in messages if m.role == "user").lower()
+        if question.startswith("[상황 보고]"):
+            mode = next((m for m in ("balanced", "recon", "rapid") if f"mode={m}" in question), "balanced")
+            return ModelTurn(tool_calls=[ToolCall("get_run_summary", {"mode": mode}), ToolCall("get_run_events", {"mode": mode, "kind": "all", "limit": 5})])
         for keywords, tool in self.ROUTES:
             if any(k in question for k in keywords):
                 args = {"report": "queue_by_turn"} if tool == "run_sql_analysis" else {}
                 # 보이지 않는 도구라도 일부러 호출해 본다: 권한이 실행 단계에서도 막히는지 평가하기 위해서다.
                 return ModelTurn(tool_calls=[ToolCall(tool, args)])
         return ModelTurn(text="이 도구들로는 답할 수 없는 질문입니다.")
+
+    @staticmethod
+    def _sitrep(messages: list[Message]) -> str:
+        results = {c.name: p for m in messages if m.role == "tool" for c, p in m.tool_results}
+        summary, events = results["get_run_summary"], results["get_run_events"]
+        sd, ed, e1, e2 = summary["data"], events["data"], summary["evidence_id"], events["evidence_id"]
+        if "error" in sd:
+            return "상황 보고\n조회하지 못했습니다: " + str(sd["error"]) + f" [{e1}]"
+        teams = "; ".join(f"{t} 도착 {v['arrived']}/{v['ugv']}대, SOS {v['sos']}건" for t, v in sd["per_team"].items())
+        evs = "; ".join(f"{e['minute']}분 {e['agent']} {e['action']}" for e in ed.get("events", [])) or "사건 없음"
+        lines = [
+            "상황 보고",
+            f"1. 개요: {sd['scope']} 기준 도착 UGV {sd['ugv_arrived']}/{sd['ugv_total']}대, 작전 시간 {sd['mission_minutes']}분, SOS {sd['sos_events']}건 [{e1}]",
+            f"2. 제대별 현황: {teams} [{e1}]",
+            f"3. 주요 사건: {evs} [{e2}]",
+            f"4. 위험 요인: 평균 위험도 {sd['mean_risk_0_1']}(0~1 절대값), 상대 고위험 구간 {sd['red_step_pct']}% [{e1}]",
+            "5. 건의: 특이 건의 없음",
+            "6. 유의: 시뮬레이션 1회 기록이며 통계 평균이 아닙니다.",
+        ]
+        return "\n".join(lines)
 
     @staticmethod
     def _answer(messages: list[Message]) -> str:

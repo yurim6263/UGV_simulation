@@ -499,3 +499,72 @@ async def test_gemini_does_not_retry_daily_quota_errors(monkeypatch):
     with pytest.raises(ModelError):
         await GeminiClient("k", "m", client=SimpleNamespace(aio=aio)).next("s", [Message("user", text="q")], [])
     assert aio.calls == 1
+
+
+# ── 상황 보고 (SITREP) ───────────────────────────────────────────────────
+
+SECTIONS = ("1. 개요", "2. 제대별 현황", "3. 주요 사건", "4. 위험 요인", "5. 건의", "6. 유의")
+
+
+@pytest.mark.asyncio
+async def test_run_summary_has_absolute_mean_risk_and_explains_the_relative_red_ratio(auth_client: AsyncClient):
+    run_id = await _finished_run(auth_client)
+    async with AsyncSessionLocal() as db:
+        e = await execute_tool(ctx_for(COMMANDER, db), ToolCall("get_run_summary", {"run_id": run_id}), "E1")
+    assert 0 < e.result["mean_risk_0_1"] < 1 and "상대 등급" in e.result["red_step_note"]
+
+
+@pytest.mark.asyncio
+async def test_sitrep_endpoint_follows_the_format_cites_evidence_and_is_logged(auth_client: AsyncClient):
+    from app.assistant.scripted import RuleBasedModel
+
+    await _finished_run(auth_client)
+    model = RuleBasedModel()
+    factory.override_model(model)
+    resp = await auth_client.post("/api/assistant/sitrep", json={"mode": "balanced"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert all(h in body["answer"] for h in SECTIONS) and body["warnings"] == []
+    assert {e["tool"] for e in body["evidences"]} == {"get_run_summary", "get_run_events"}
+    async with AsyncSessionLocal() as db:
+        row = (await db.execute(select(AssistantLog))).scalar_one()
+    assert row.kind == "sitrep" and row.grounded and row.role == "commander"
+
+
+@pytest.mark.asyncio
+async def test_sitrep_passes_the_format_and_mode_to_the_model_and_rejects_unknown_modes(auth_client: AsyncClient):
+    model = ScriptedModel([say("상황 보고")])
+    factory.override_model(model)
+    assert (await auth_client.post("/api/assistant/sitrep", json={"mode": "rapid"})).status_code == 200
+    assert "[상황 보고 양식]" in model.systems[0]
+    assert "rapid" in model.calls[0][0].text and "신속" in model.calls[0][0].text
+    assert (await auth_client.post("/api/assistant/sitrep", json={"mode": "nope"})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_operator_sitrep_contains_only_own_team(auth_client: AsyncClient, login_as):
+    from app.assistant.scripted import RuleBasedModel
+
+    await _finished_run(auth_client)
+    factory.override_model(RuleBasedModel())
+    user2 = await login_as("user2")
+    body = (await user2.post("/api/assistant/sitrep", json={})).json()
+    assert "Bravo" in body["answer"] and "Alpha" not in body["answer"] and "Charlie" not in body["answer"]
+    assert "Alpha" not in json.dumps([e["result"] for e in body["evidences"]], ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_sitrep_needs_login(client: AsyncClient):
+    assert (await client.post("/api/assistant/sitrep", json={})).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_sitrep_is_503_without_key(auth_client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(factory.settings, "gemini_api_key", "")
+    assert (await auth_client.post("/api/assistant/sitrep", json={})).status_code == 503
+
+
+def test_eval_set_contains_sitrep_cases():
+    from app.assistant.evals import CASES
+
+    assert {c.id for c in CASES if c.kind == "sitrep"} == {"sitrep_commander", "sitrep_operator"}
