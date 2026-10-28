@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { CircleMarker, ImageOverlay, MapContainer, Marker, Polyline, TileLayer, Tooltip } from "react-leaflet";
+import { CircleMarker, ImageOverlay, MapContainer, Marker, Polyline, Tooltip } from "react-leaflet";
+import BaseMap from "./BaseMap";
 import { GRADE_COLOR, TEAM_COLOR, agentLabel, pathAt, stateAt } from "./replayModel";
 
 const dotIcon = (color) => L.divIcon({
@@ -39,11 +40,11 @@ export default function ReplayMap({ replay, allowedTeams }) {
 
   return (
     <MapContainer bounds={scenario.bounds} boundsOptions={{ padding: [6, 6] }} zoomControl attributionControl={false}>
-      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={18} opacity={0.5} />
+      <BaseMap />
       <ImageOverlay
         url={overlayUrl(overlay, turn)}
         bounds={scenario.bounds}
-        opacity={0.85}
+        opacity={0.6}
         className="replay-overlay"
         interactive={false}
       />

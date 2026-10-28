@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
-import { ImageOverlay, MapContainer, Marker, TileLayer, Tooltip } from "react-leaflet";
+import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
 import { API_URL, clearToken, launchMission, latestRunSet, login as apiLogin, waitForRuns } from "./api";
 import { initialTargets, ltwrMaps, units } from "./data";
 import { useReplay } from "./replay/useReplay";
+import BaseMap from "./replay/BaseMap";
 import ReplayMap from "./replay/ReplayMap";
 import ReplayControls from "./replay/ReplayControls";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
@@ -71,11 +72,7 @@ function InputMap({ targets, visible }) {
   return (
     <div className="input-map">
       <MapContainer bounds={MAP_BOUNDS} boundsOptions={{ padding: [8, 8] }} zoomControl attributionControl={false}>
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={18}
-          opacity={0.5}
-        />
+        <BaseMap />
         <ImageOverlay url={`${API_URL}/api/map/tactical/terrain-image`} bounds={MAP_BOUNDS} opacity={0.7} />
         <ImageOverlay url={`${API_URL}/api/map/tactical/buffer-image`} bounds={MAP_BOUNDS} opacity={0.5} />
         <ImageOverlay url={`${API_URL}/api/map/tactical/cost-image?layer=risk`} bounds={MAP_BOUNDS} opacity={0.78} />
