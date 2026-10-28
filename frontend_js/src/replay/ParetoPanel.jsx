@@ -49,6 +49,11 @@ export default function ParetoPanel({ onPickMode }) {
 
   return (
     <div className="pareto">
+      <p className="pareto-intro">
+        <b>이 탭은 무엇인가요?</b> 편성(제대별 UGV 수)과 전술 설정을 컴퓨터가 수백 번 시험(NSGA-II 최적화)해서 찾은 결과입니다.
+        가로는 작전 시간, 세로는 수색 면적이라 <b>왼쪽 위로 갈수록 좋습니다</b>. 점 하나가 시험한 전술 하나이고, 큰 점이 신속·균형·정밀 대표 전술입니다.
+        아래 메뉴판을 누르면 그 모드로 지도가 바뀝니다.
+      </p>
       <svg viewBox={`0 0 ${W} ${H}`} className="pareto-chart" role="img" aria-label="파레토 곡선">
         <line x1={PAD.l} x2={W - PAD.r} y1={H - PAD.b} y2={H - PAD.b} />
         <line x1={PAD.l} x2={PAD.l} y1={PAD.t} y2={H - PAD.b} />

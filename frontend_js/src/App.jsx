@@ -2,13 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
 import { API_URL, assistantStatus, clearToken, draftMission, launchMission, latestRunSet, login as apiLogin, waitForRuns } from "./api";
-import { initialTargets, ltwrMaps, units } from "./data";
+import { initialTargets, units } from "./data";
 import { useReplay } from "./replay/useReplay";
 import BaseMap from "./replay/BaseMap";
 import ReplayMap from "./replay/ReplayMap";
 import ReplayControls from "./replay/ReplayControls";
 import TeamTimeline from "./replay/TeamTimeline";
 import AssistantPanel from "./replay/AssistantPanel";
+import ForecastPanel from "./replay/ForecastPanel";
+import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
 import { GRADE_COLOR, REPLAY_SOURCES, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, scopedKpi, teamRedRatio } from "./replay/replayModel";
@@ -324,20 +326,16 @@ function LogoutIcon() {
   );
 }
 
-function LtwrPanel() {
-  return <div className="ltwr-scroll">{ltwrMaps.map((map) => <section className="ltwr-card" key={map.file}><h3>{map.title}</h3><iframe src={map.file} title={map.title} /></section>)}</div>;
-}
-
 function remainingLabel(turns, turn) {
   const min = Math.max(0, (turns - turn - 1) * 10);
   return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}:00`;
 }
 
-function Seg({ value, options, onChange, disabled }) {
+function Seg({ value, options, onChange, disabled, hints }) {
   return (
     <div className="seg">
       {options.map(([key, label]) => (
-        <button key={key} className={value === key ? "on" : ""} onClick={() => onChange(key)} disabled={disabled}>{label}</button>
+        <button key={key} className={value === key ? "on" : ""} onClick={() => onChange(key)} disabled={disabled} title={hints?.[key]}>{label}</button>
       ))}
     </div>
   );
@@ -361,7 +359,7 @@ function MainDashboard({ account, onLogout }) {
     () => (models ? Object.fromEntries(Object.entries(models).map(([k, m]) => [k, scopedKpi(m, myTeam)])) : {}),
     [models, myTeam],
   );
-  const tabs = [["events", "이벤트"], ["units", "UGV"], ["pareto", "최적화"], ["ltwr", "예보"], ["ai", "AI 어시스턴트"]];
+  const tabs = [["events", "이벤트"], ["units", "UGV"], ["pareto", "최적화"], ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
 
   return (
     <main className="app">
@@ -370,6 +368,9 @@ function MainDashboard({ account, onLogout }) {
         <Brand />
         <span className="chip"><i className="dot" style={{ background: GRADE_COLOR.G }} />{scenario ? scenario.case : "불러오는 중"}</span>
         <div className="top-right">
+          {model && scenario?.start_time && (
+            <div className="remaining" title="시뮬레이션 데이터의 시각입니다. 실제 현재 시각이 아닙니다."><small>시나리오 시각</small><span className="num">{clockText(scenario.start_time, turn * 10)}</span></div>
+          )}
           <div className="remaining"><small>남은 시간</small><span className="num">{model ? remainingLabel(model.kpi.turns, turn) : "--:--:--"}</span></div>
           <span className="chip">{account.label} · {account.username}</span>
           <button className="icon-btn" onClick={onLogout} aria-label="로그아웃"><LogoutIcon /></button>
@@ -397,7 +398,9 @@ function MainDashboard({ account, onLogout }) {
           </section>
           <section>
             <h2 className="h">데이터 출처</h2>
-            <Seg value={source} options={Object.entries(REPLAY_SOURCES).map(([k, s]) => [k, s.label])} onChange={setSource} />
+            <Seg value={source} options={Object.entries(REPLAY_SOURCES).map(([k, s]) => [k, s.label])} onChange={setSource}
+              hints={Object.fromEntries(Object.entries(REPLAY_SOURCES).map(([k, s]) => [k, s.desc]))} />
+            <p className="hint tight">{REPLAY_SOURCES[source].desc}</p>
           </section>
           {model && (
             <section>
@@ -412,20 +415,24 @@ function MainDashboard({ account, onLogout }) {
                     <span className="tn">{TEAM_UNIT[t]} {t}</span>
                     <em>UGV {pt.ugv}</em>
                     <span className="bars">
-                      <span title="도착률"><b style={{ width: `${Math.round((pt.arrived / pt.ugv) * 100)}%`, background: TEAM_COLOR[t] }} /></span>
-                      <span title="고위험 구간 비율"><b style={{ width: `${Math.round((redByTeam[t] ?? 0) * 100)}%`, background: "var(--risk-r)" }} /></span>
+                      <span className="bar-row" title="이 제대 UGV 중 도착한 비율">
+                        <small>도착</small><span className="bar"><b style={{ width: `${Math.round((pt.arrived / pt.ugv) * 100)}%`, background: TEAM_COLOR[t] }} /></span><em>{Math.round((pt.arrived / pt.ugv) * 100)}%</em>
+                      </span>
+                      <span className="bar-row" title="UGV 이동 기록 중 상대 등급 R(상위 30%) 칸에서 보낸 비율">
+                        <small>고위험</small><span className="bar"><b style={{ width: `${Math.round((redByTeam[t] ?? 0) * 100)}%`, background: "var(--risk-r)" }} /></span><em>{Math.round((redByTeam[t] ?? 0) * 100)}%</em>
+                      </span>
                     </span>
                     <small>{pt.poi ? `POI-${pt.poi}` : "-"} · {pt.arrive_turn == null ? "미도착" : `도착 ${elapsedLabel(pt.arrive_turn + 1)}`}</small>
                   </Tag>
                 );
               })}
-              <p className="hint tight">막대: 위 도착률(제대 색) · 아래 상대 고위험 구간 비율(빨강)</p>
+              <p className="hint tight">도착: 제대 UGV 중 임무를 마친 비율. 고위험: 이동 기록 중 상대 등급 R 칸에서 보낸 비율.</p>
             </section>
           )}
           {account.role === "commander" && <button className="btn primary block big push" onClick={() => notify("임무를 통제관에게 하달했습니다.")}>임무 하달</button>}
         </aside>
 
-        <div className="center">
+        <div className="center-col">
           <section className="stage">
             {replay.error && <p className="status error">{replay.error}</p>}
             {replay.loading && <p className="status">재생 데이터를 불러오는 중…</p>}
@@ -452,7 +459,7 @@ function MainDashboard({ account, onLogout }) {
             {model && tab === "events" && <EventList replay={replay} allowedTeams={allowedTeams} />}
             {model && tab === "units" && <AgentTable replay={replay} allowedTeams={allowedTeams} />}
             {tab === "pareto" && <ParetoPanel onPickMode={replay.setMode} />}
-            {tab === "ltwr" && <LtwrPanel />}
+            {tab === "forecast" && model && <ForecastPanel replay={replay} allowedTeams={allowedTeams} />}
             {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode} />}
           </div>
         </aside>
@@ -472,6 +479,8 @@ function UserMissionPage({ account, onConfirm, onLogout }) {
   const pt = model?.kpi.per_team[team];
   const poi = pt?.poi ? replay.scenario?.pois.find((p) => p.id === pt.poi) : null;
   const dash = (v) => (v === null || v === undefined ? "-" : v);
+  const launchTurn = model && team ? teamLaunchTurn(model, team) : null;
+  const startIso = replay.scenario?.start_time;
   return (
     <main className="app">
       <header className="top">
@@ -498,8 +507,9 @@ function UserMissionPage({ account, onConfirm, onLogout }) {
           </section>
           <section className="card"><h2 className="h">임무 정보</h2>
             <p className="kv"><span>임무 모드</span><b className="amber">균형</b></p>
-            <p className="kv"><span>출발 예정 시각</span><b className="num">T+0분</b></p>
-            <p className="kv"><span>도착 예정 시각</span><b className="num">{pt ? (pt.arrive_turn == null ? "미도착" : elapsedLabel(pt.arrive_turn + 1)) : "-"}</b></p>
+            <p className="kv"><span>출발 시각</span><b className="num">{launchTurn === null ? "-" : elapsedLabel(launchTurn)}</b></p>
+            <p className="kv"><span>도착 시각 (시뮬레이션)</span><b className="num">{pt ? (pt.arrive_turn == null ? "미도착" : elapsedLabel(pt.arrive_turn + 1)) : "-"}</b></p>
+            {startIso && <p className="kv"><span>시나리오 시각</span><b className="num">{clockText(startIso, (launchTurn ?? 0) * 10)} → {pt?.arrive_turn == null ? "-" : clockText(startIso, (pt.arrive_turn + 1) * 10)}</b></p>}
           </section>
         </div>
         <button className="btn primary big center" onClick={onConfirm} disabled={!model}>통제관 메인 화면으로</button>

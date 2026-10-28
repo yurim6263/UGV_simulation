@@ -281,6 +281,14 @@ class Environment:
         self.active_layers = self.get_time_cube("total")
         return self.active_layers
 
+    def model_time_at(self, t):
+        """시각 t 에 이미 발표되어 있던 가장 최근 예보의 발표 시각 (없으면 None)."""
+        return self._resolve_model_time(t)
+
+    def forecast_layer(self, kind, model_time, target_t):
+        """발표 시각 model_time 의 예보 중 목표 시각 target_t 의 위험도 격자. 없으면 None (지속성으로 채우지 않는다)."""
+        return self._forecast[kind].get((model_time, target_t))
+
     @property
     def start_time(self):
         """데이터가 있는 가장 이른 실황 시각."""

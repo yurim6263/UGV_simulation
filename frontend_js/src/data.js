@@ -11,9 +11,3 @@ export const units = [
   { key: "user2", name: "2제대", color: "#b07cff", success: 64, risk: 57, depart: "02:10:00", arrive: "05:50:00" },
   { key: "user3", name: "3제대", color: "#ff8fb1", success: 86, risk: 22, depart: "02:30:00", arrive: "06:10:00" },
 ];
-
-export const ltwrMaps = [
-  { title: "현재 + 1시간 뒤 예측", file: "/map_01_Tactical_Weighted_Cost_1h.html" },
-  { title: "현재 + 2시간 뒤 예측", file: "/map_01_Tactical_Weighted_Cost_2h.html" },
-  { title: "현재 + 3시간 뒤 예측", file: "/map_01_Tactical_Weighted_Cost_3h.html" },
-];

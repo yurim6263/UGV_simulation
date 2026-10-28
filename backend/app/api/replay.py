@@ -38,9 +38,13 @@ async def get_replay(run_id: int, db: DBSession, user: CurrentUser):
     except RunDataError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
+    from app.simulation.shared_env import get_environment
+
     meta = SimAlgoConfig.meta()
+    start_time = get_environment().start_time
     return {
         "scenario": {
+            "start_time": start_time.isoformat() if start_time else None,      # 데이터의 시작 시각 (표준 시간대 정보 없음)
             "turn_minutes": 10,
             "turns": int(data.frame.turn_idx.max()) + 1,
             "bounds": grid_bounds(meta.lat, meta.lon),
@@ -83,6 +87,75 @@ def overlay_image(kind: Literal["total", "mobility", "sensor"], turn: int, scale
     grids, lo, hi = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))
     buf = io.BytesIO()
     overlay_png(grids[turn], lo, hi).save(buf, format="PNG", optimize=True)
+    return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ── 예보 위험도 지도 ─────────────────────────────────────────────────────
+# 현재 시각(턴)에 이미 발표되어 있던 가장 최근 예보에서, 현재 + lead 분 뒤의 위험도를 보여준다.
+# 예보가 없는 시각을 실황이나 지속성으로 채우지 않는다 (예보가 아닌 것을 예보처럼 보이게 하지 않기 위해).
+
+_MAX_LEAD_MIN = 180
+
+
+def _forecast_target(kind: str, turn: int, lead_min: int):
+    from datetime import timedelta
+
+    from app.simulation.shared_env import get_environment
+
+    if not 0 <= turn <= _MAX_OVERLAY_TURN:
+        raise HTTPException(status_code=404, detail=f"턴은 0~{_MAX_OVERLAY_TURN} 범위입니다.")
+    if not 0 <= lead_min <= _MAX_LEAD_MIN or lead_min % 10:
+        raise HTTPException(status_code=422, detail=f"lead_min 은 0~{_MAX_LEAD_MIN} 사이의 10분 단위여야 합니다.")
+    env = get_environment()
+    now = env.start_time + timedelta(minutes=10 * turn)
+    model_time = env.model_time_at(now)
+    target = now + timedelta(minutes=lead_min)
+    grid = env.forecast_layer(_OVERLAY_KINDS[kind], model_time, target) if model_time is not None else None
+    return env, now, model_time, target, grid
+
+
+def _grade_shares(grid, lo: float, hi: float) -> dict:
+    """위험도 격자의 G/A/R 칸 비율 (데이터 없는 칸 제외). 지도 색과 같은 경계를 쓴다."""
+    v = grid[np.isfinite(grid)]
+    if v.size == 0:
+        return {"G": 0.0, "A": 0.0, "R": 0.0}
+    return {"G": float((v <= lo).mean()), "A": float(((v > lo) & (v <= hi)).mean()), "R": float((v > hi).mean())}
+
+
+@router.get("/map/forecast-info", summary="예보 지도의 발표 시각/대상 시각, 예보 존재 여부, 예보와 실황의 등급 비율")
+def forecast_info(turn: int, lead_min: int = 60, kind: Literal["total", "mobility", "sensor"] = "total", scale: float | None = None):
+    from app.simulation.real_runner import _weather_scale
+
+    env, now, model_time, target, grid = _forecast_target(kind, turn, lead_min)
+    reason = None
+    if model_time is None:
+        reason = "이 시각 이전에 발표된 예보가 없습니다."
+    elif grid is None:
+        reason = "이 발표의 예보 범위(발표 후 3시간)를 벗어난 시각입니다."
+    out = {"current_time": now.isoformat(), "model_time": model_time.isoformat() if model_time else None,
+           "target_time": target.isoformat(), "lead_min": lead_min, "available": grid is not None, "reason": reason,
+           "forecast_share": None, "actual_share": None}
+    if grid is not None:
+        sc = round(scale if scale is not None else _weather_scale(), 3)
+        _, lo, hi = _overlay_setup(kind, sc)
+        out["forecast_share"] = _grade_shares(np.clip(grid * sc, 0, 1), lo, hi)
+        actual = env.actual_at(target, _OVERLAY_KINDS[kind])          # 그 시각의 실제 값 (실황 데이터가 끝난 뒤면 None)
+        if actual is not None:
+            out["actual_share"] = _grade_shares(np.clip(actual * sc, 0, 1), lo, hi)
+    return out
+
+
+@router.get("/map/forecast/{kind}/{turn}/{lead_min}.png", summary="예보 위험도 오버레이 이미지 (G/A/R)")
+def forecast_image(kind: Literal["total", "mobility", "sensor"], turn: int, lead_min: int, scale: float | None = None):
+    from app.simulation.real_runner import _weather_scale
+    from app.simulation.replay import overlay_png
+
+    _, _, _, _, grid = _forecast_target(kind, turn, lead_min)
+    if grid is None:
+        raise HTTPException(status_code=404, detail="이 시각의 예보가 없습니다.")
+    _, lo, hi = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))      # 실황 지도와 같은 등급 경계
+    buf = io.BytesIO()
+    overlay_png(np.clip(grid * round(scale if scale is not None else _weather_scale(), 3), 0, 1), lo, hi).save(buf, format="PNG", optimize=True)
     return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
 
 

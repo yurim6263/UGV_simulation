@@ -78,9 +78,12 @@ button.team:hover { border-color: var(--line2); }
 .team.off { opacity: .45; }
 .team > i { width: 10px; height: 10px; border-radius: 3px; }
 .team em { font-style: normal; font-size: 12px; color: var(--muted); }
-.team .bars { grid-column: 1 / -1; display: grid; gap: 3px; }
-.team .bars span { display: block; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
-.team .bars b { display: block; height: 100%; }
+.team .bars { grid-column: 1 / -1; display: grid; gap: 4px; }
+.team .bar-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) 34px; align-items: center; gap: 6px; }
+.team .bar-row small { grid-column: auto; font-size: 10.5px; color: var(--muted); }
+.team .bar-row em { font-size: 10.5px; text-align: right; color: var(--soft); }
+.team .bar { display: block; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.team .bar b { display: block; height: 100%; }
 .team small { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
 
 /* ── 지도 무대 ─────────────────────────────────────────────────────── */
@@ -291,7 +294,7 @@ button.team:hover { border-color: var(--line2); }
 input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--surface) inset; -webkit-text-fill-color: var(--text); caret-color: var(--text); }
 
 /* ── 제대별 타임라인 ─────────────────────────────────────────────── */
-.center { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.center-col { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
 .timeline { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: var(--panel); }
 .tl-head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
 .tl-head b { font-size: 12px; letter-spacing: .06em; color: var(--muted); }
@@ -333,3 +336,32 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--surface) inset; -
 .kpis.compact small { display: block; font-size: 10.5px; color: var(--muted); }
 .kpis.compact b { font-size: 16px; font-weight: 500; }
 .kpis.compact u { margin-left: 2px; font-size: 11px; text-decoration: none; color: var(--muted); font-weight: 400; }
+
+.pareto-intro { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 12px; line-height: 1.6; color: var(--soft); }
+.pareto-intro b { color: var(--text); }
+
+/* ── 스크롤바: 어두운 테마에 맞춘 얇은 스크롤바 (모든 스크롤 영역) ──────────── */
+* { scrollbar-width: thin; scrollbar-color: #33475c transparent; }
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #33475c; border: 2px solid transparent; border-radius: 8px; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a6178; background-clip: padding-box; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+}
+
+/* 예보 탭 */
+.forecast { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px; }
+.forecast .seg { flex: none; }
+.fc-info { margin: 0; font-size: 12px; color: var(--soft); line-height: 1.5; }
+.fc-info b { color: var(--text); font-weight: 600; }
+.fc-info span { color: var(--muted); }
+.mini-map { position: relative; flex: none; height: 300px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mini-map .leaflet-bottom.leaflet-right { margin-bottom: 0; }
+.fc-none { position: absolute; z-index: 900; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border: 1px solid var(--line2); border-radius: 10px; background: #0e151df2; text-align: center; font-size: 13px; }
+.fc-none small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.fc-shares { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.share-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 70px; align-items: center; gap: 8px; font-size: 11.5px; color: var(--soft); }
+.share-row em { font-style: normal; text-align: right; color: var(--muted); }
+.share-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+.share-bar i { display: block; height: 100%; }
