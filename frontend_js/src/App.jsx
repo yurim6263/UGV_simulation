@@ -440,7 +440,7 @@ function Seg({ value, options, onChange, disabled, hints }) {
 
 function MainDashboard({ account, onLogout }) {
   const replay = useReplay();
-  const [tab, setTab] = useState("events");
+  const [tab, setTab] = useState("summary");
   const [notice, setNotice] = useState("");
   const notify = (text) => { setNotice(text); setTimeout(() => setNotice(""), 2400); };
 
@@ -455,7 +455,7 @@ function MainDashboard({ account, onLogout }) {
     () => (models ? Object.fromEntries(Object.entries(models).map(([k, m]) => [k, scopedKpi(m, myTeam)])) : {}),
     [models, myTeam],
   );
-  const tabs = [["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"]]), ["pareto", "최적화"], ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
+  const tabs = [["summary", "요약"], ["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"]]), ["pareto", "최적화"], ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
 
   return (
     <main className="app">
@@ -540,13 +540,13 @@ function MainDashboard({ account, onLogout }) {
         </div>
 
         <aside className="right">
-          {model ? <KpiSummary replay={replay} team={myTeam} compact={tab === "ai" || tab === "formation"} /> : <section className="kpis"><p className="kpis-basis">임무 요약</p></section>}
           <div className="tabs" role="tablist">
             {tabs.map(([key, label]) => (
               <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>
             ))}
           </div>
           <div className="panel">
+            {model && tab === "summary" && <KpiSummary replay={replay} team={myTeam} />}
             {model && tab === "events" && <EventList replay={replay} allowedTeams={allowedTeams} />}
             {model && tab === "units" && <AgentTable replay={replay} allowedTeams={allowedTeams} />}
             {tab === "formation" && model && <FormationPanel replay={replay} />}
