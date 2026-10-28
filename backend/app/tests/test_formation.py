@@ -78,15 +78,15 @@ def test_compose_averages_over_seeds_and_reports_spread():
 
 # ── 모드별 선택 ──────────────────────────────────────────────────────────
 
-def cand(formation, arrival=1.0, v1=0.4, v2=200, v3=0):
-    return {"formation": list(formation), "total": sum(formation), "arrival": arrival, "v1": v1, "v2": v2, "v3": v3}
+def cand(formation, arrival=1.0, v1=0.4, v2=200, v3=0, sos=0.0):
+    return {"formation": list(formation), "total": sum(formation), "arrival": arrival, "v1": v1, "v2": v2, "v3": v3, "sos": sos}
 
 
 CANDS = [
-    cand((1, 1, 1), v1=0.36, v2=150),
-    cand((2, 2, 2), v1=0.45, v2=180, v3=5),
-    cand((3, 3, 3), v1=0.50, v2=200, v3=25),
-    cand((3, 3, 2), v1=0.495, v2=198, v3=20),                  # (3,3,3) 와 수색 차이 0.5%p: 동률권
+    cand((1, 1, 1), v1=0.36, v2=150, sos=3),
+    cand((2, 2, 2), v1=0.46, v2=180, v3=5, sos=6),
+    cand((3, 3, 3), v1=0.50, v2=200, v3=25, sos=12),
+    cand((3, 3, 2), v1=0.495, v2=198, v3=20, sos=10),                  # (3,3,3) 와 수색 차이 0.5%p: 동률권
     cand((1, 1, 2), arrival=0.5, v1=0.60, v2=100),             # 제약(도착률 80%) 미달: 좋아 보여도 고르지 않는다
 ]
 
@@ -100,10 +100,20 @@ def test_rush_minimizes_time_among_feasible():
     assert choose(CANDS, "rush")["formation"] == [1, 1, 1]                # 도착률 미달인 (1,1,2) 는 제외
 
 
-def test_balance_picks_the_compromise_not_an_extreme():
-    pick = choose(CANDS, "balance")["formation"]
-    assert pick not in ([1, 1, 1], [3, 3, 3])
-    assert pick == [2, 2, 2]
+def test_balance_takes_90_percent_of_the_best_coverage_with_the_least_operator_burden():
+    pick = choose(CANDS, "balance")
+    assert pick["formation"] == [2, 2, 2]                                  # 수색 0.45 이상(최대 0.50 의 90%): (2,2,2) (3,3,2) (3,3,3) 중 과부하가 가장 낮은 것
+    assert "90%" in pick["reason"]
+
+
+def test_balance_ignores_candidates_below_the_coverage_bar_even_if_their_burden_is_lowest():
+    assert choose(CANDS, "balance")["formation"] != [1, 1, 1]              # (1,1,1) 은 부담이 가장 낮지만 수색이 0.36 으로 기준 미달
+
+
+def test_balance_is_not_a_copy_of_explore_when_the_top_candidates_are_close():
+    near = [cand((3, 3, 1), v1=0.492, v3=15, sos=13.8), cand((2, 1, 2), v1=0.446, v3=0, sos=8.5), cand((2, 1, 1), v1=0.394, v3=0, sos=7.2)]
+    assert choose(near, "explore")["formation"] == [3, 3, 1]
+    assert choose(near, "balance")["formation"] == [2, 1, 2]
 
 
 def test_modes_differ_on_a_realistic_table():

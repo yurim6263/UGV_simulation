@@ -13,10 +13,11 @@ backend/app/simulation/formation.py
     수색 면적      = 수색한 칸의 합집합   운용자 과부하 = 과부하였던 턴의 합집합
   27가지를 전부 직접 돌리는 것보다 수 배 빠르다. 합성이 직접 시뮬레이션과 맞는지는 tests/test_formation.py 가 확인한다.
 
-모드는 "무엇을 우선하나"만 정한다 (choose):
-  정밀(explore) 도착률 80% 이상 중 수색 면적 최대      신속(rush) 도착률 80% 이상 중 작전 시간 최소
-  균형(balance) 도착률 80% 이상 중 "수색 손해 + 부담(시간·과부하 평균) 손해"가 최소 (손해 = 최선값과의 차이를 범위로 나눈 값)
-  차이가 우연 수준(수색 1%p, 시간 5분 이내)이면 UGV 가 적은 편성을 고른다.
+모드는 "무엇을 우선하나"만 정한다 (choose). 셋 다 도착률 80% 이상인 후보 중에서 고른다:
+  정밀(explore) 수색 면적 최대      신속(rush) 작전 시간 최소
+  균형(balance) 수색이 후보 중 최대값의 90% 이상인 것 가운데 운용자 부담(과부하 → SOS)이 가장 낮은 것
+  정밀과 신속은 차이가 우연 수준(수색 1%p, 시간 5분 이내)이면 UGV 가 적은 편성을 고른다.
+  균형이 "수색과 부담을 합친 손해 최소"가 아닌 이유: 그렇게 하면 정밀과 거의 같은 편성이 나왔다 (docs/formation_planner.md).
 모드의 전술 성향(산개, 기상 민감도, 목줄 거리)은 presets.py 의 값을 쓴다 (모드마다 따로 시험한다).
 
 한계: 시뮬레이션 추정이고 시드가 적어(기본 4개) 근소한 차이는 구분되지 않는다. "최적"은 이 추정에서 가장 좋다는 뜻이다.
@@ -37,13 +38,14 @@ from app.simulation.algo.episode import Genes, ScenarioSpec
 from app.simulation.batch import Job, run_batch
 from app.simulation.presets import DEFAULT_POIS, MODE_PRESETS, preset
 
-PLANNER_VERSION = 1
+PLANNER_VERSION = 2
 MODES = ("balance", "explore", "rush")
 MIN_PER_TEAM, MAX_PER_TEAM = 1, 3
 MIN_ARRIVAL = 0.8
 SEEDS = (1001, 1002, 1003, 1004)
 TIE_COVERAGE = 0.01          # 수색 비율 차이가 이 이하면 동률
 TIE_MINUTES = 5              # 작전 시간 차이가 이 이하(분)면 동률
+BALANCE_COVERAGE = 0.9       # 균형 모드: 수색이 최대값의 이 비율 이상이어야 후보
 
 
 @dataclass(frozen=True)
@@ -163,7 +165,7 @@ def mark_pareto(cands: list[dict]) -> None:
 REASON = {
     "explore": "도착률 {a:.0f}% 이상인 {k}개 중 수색 면적이 가장 큰 편성 (동률권 {t}개 중 UGV가 가장 적은 것)",
     "rush": "도착률 {a:.0f}% 이상인 {k}개 중 작전 시간이 가장 짧은 편성 (동률권 {t}개 중 UGV가 가장 적은 것)",
-    "balance": "도착률 {a:.0f}% 이상인 {k}개 중 수색 면적의 손해와 부담(작전 시간·운용자 과부하의 평균 손해)의 합이 가장 작은 편성",
+    "balance": "도착률 {a:.0f}% 이상인 {k}개 중 수색 면적이 최대값의 90% 이상인 {t}개 가운데 운용자 부담(과부하 → SOS)이 가장 낮은 편성",
 }
 
 
@@ -181,14 +183,10 @@ def choose(cands: list[dict], mode: str, min_arrival: float = MIN_ARRIVAL) -> di
         tied = [c for c in pool if c["v2"] <= best + TIE_MINUTES]
         pick = min(tied, key=lambda c: (c["total"], -c["v1"]))
     else:
-        rng = lambda k: max(1e-9, max(c[k] for c in pool) - min(c[k] for c in pool))  # noqa: E731
-        r1, r2, r3 = rng("v1"), rng("v2"), rng("v3")
-        v1max, v2min, v3min = max(c["v1"] for c in pool), min(c["v2"] for c in pool), min(c["v3"] for c in pool)
-        # 이득(수색)과 부담(시간·운용자 과부하의 평균)을 같은 비중으로 본다. 세 지표를 따로 더하면 부담이 둘이라
-        # 작은 편성이 유리해져 균형이 신속과 같은 편성을 고른다.
-        regret = lambda c: (v1max - c["v1"]) / r1 + ((c["v2"] - v2min) / r2 + (c["v3"] - v3min) / r3) / 2  # noqa: E731
-        tied = pool
-        pick = min(pool, key=lambda c: (round(regret(c), 6), c["total"]))
+        # 정밀의 90% 수준 수색을 가장 적은 운용자 부담으로 낼 수 있는 편성 (정밀과 신속 사이의 중간 단계)
+        best = max(c["v1"] for c in pool)
+        tied = [c for c in pool if c["v1"] >= BALANCE_COVERAGE * best]
+        pick = min(tied, key=lambda c: (round(c["v3"]), round(c["sos"], 1), c["total"]))
     reason = REASON[mode].format(a=min_arrival * 100, k=len(pool), t=len(tied))
     if not met:
         reason = f"도착률 {min_arrival * 100:.0f}% 이상을 만족하는 편성이 없어 도착률이 가장 높은 편성 중에서 골랐습니다. " + reason

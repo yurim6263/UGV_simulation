@@ -57,6 +57,7 @@ export default function FormationPanel({ replay }) {
         })}
       </div>
       <p className="fm-reason">{picks[mode].reason}{!picks[mode].constraint_met && " (제약 불충족)"}</p>
+      {new Set(MODES.map(([k]) => key(picks[k].formation))).size === 1 && <p className="hint tight">이 목표에서는 세 모드의 편성이 같습니다. 쉬운 임무라 UGV를 늘려도 얻는 것이 없거나, 도착 기준을 맞추는 편성이 하나뿐이기 때문입니다.</p>}
       <label className="fm-filter"><input type="checkbox" checked={onlyBest} onChange={(e) => setOnlyBest(e.target.checked)} /> 다른 편성에 모든 면에서 밀리지 않는 후보만 (▲ 표시)</label>
       <div className="fm-table">
         <table>

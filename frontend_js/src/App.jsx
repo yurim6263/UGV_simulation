@@ -10,6 +10,7 @@ import TeamTimeline from "./replay/TeamTimeline";
 import AssistantPanel from "./replay/AssistantPanel";
 import FormationPanel from "./replay/FormationPanel";
 import ForecastPanel from "./replay/ForecastPanel";
+import { MODE_FOCUS, pickRow, usePlan } from "./replay/usePlan";
 import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
@@ -19,9 +20,9 @@ import { FLEET_UGV, GRADE_COLOR, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel,
 const MAP_BOUNDS = [[54.2977, 18.2640], [54.5209, 18.6479]];
 const TEAM_ORDER = ["Alpha", "Bravo", "Charlie"];
 const MODES = [
-  { label: "균형", key: "balance", desc: "도착과 안전의 균형" },
-  { label: "정밀", key: "explore", desc: "수색 범위 우선" },
-  { label: "신속", key: "rush", desc: "빠른 도착 우선" },
+  { label: "균형", key: "balance" },
+  { label: "정밀", key: "explore" },
+  { label: "신속", key: "rush" },
 ];
 const OVERLAY_LABEL = { total: "종합", mobility: "기동성", sensor: "센서" };
 
@@ -448,6 +449,7 @@ function MainDashboard({ account, onLogout }) {
   const myTeam = account.role === "commander" ? null : USER_TEAM[account.username];
   const allowedTeams = myTeam ? [myTeam] : null;
   const { model, models, scenario } = replay;
+  const { plan } = usePlan(scenario?.mission_id, !myTeam);          // 편성 계산은 지휘관만 읽을 수 있다
   const turn = model ? model.frames[replay.frame].turn : 0;
   const redByTeam = useMemo(() => (model ? teamRedRatio(model) : {}), [model]);
   const shownTeams = TEAM_ORDER.filter((t) => model?.kpi.per_team[t] && (!allowedTeams || allowedTeams.includes(t)));
@@ -479,10 +481,13 @@ function MainDashboard({ account, onLogout }) {
             <h2 className="h">임무 모드</h2>
             {MODES.map((m) => {
               const k = modeKpi[m.key];
+              const focus = MODE_FOCUS[m.key];
+              const row = pickRow(plan, m.key);
               return (
                 <button key={m.key} className={`mode ${replay.mode === m.key ? "on" : ""}`} onClick={() => replay.setMode(m.key)} disabled={!model}>
                   <span className="n">{m.label}{replay.mode === m.key && <small>선택됨</small>}</span>
-                  <span className="d">{m.desc}</span>
+                  <span className="d">{focus.desc}</span>
+                  {row && <span className="focus" title={`${focus.tip} · 편성 계산의 평균(시드 ${row.seeds}개)`}>{focus.label} <b className="num">{focus.get(row)}</b></span>}
                   {models?.[m.key] && <span className="mode-form" title="제대별 UGV 투입 대수 (목표 위치에 맞게 계산)">편성 <b className="num">{formationText(models[m.key], myTeam)}</b></span>}
                   {k && <span className="m"><span>도착 <b className="num">{k.arrived}/{k.total}</b></span><span>SOS <b className="num">{k.sos}</b></span></span>}
                 </button>
