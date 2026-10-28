@@ -1,6 +1,7 @@
 # 모든 모델을 한 곳에서 임포트하여 Alembic autogenerate가 감지하도록 함
 from app.db.models.alert import RunAlert
 from app.db.models.assistant_log import AssistantLog
+from app.db.models.formation_plan import FormationPlan
 from app.db.models.data_asset import DataAsset, MissionAsset, RunInputAsset
 from app.db.models.mission import Mission, MissionForceMixCandidate, MissionTarget
 from app.db.models.patrol import RunPatrolEvent
@@ -38,4 +39,5 @@ __all__ = [
     "RunAssetStatus",
     "RunTrack",
     "AssistantLog",
+    "FormationPlan",
 ]

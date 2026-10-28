@@ -55,15 +55,27 @@ def test_even_split_distributes_all_ugvs():
     assert sum(even_split(7, 2)) == 7
 
 
-def test_scenario_uses_one_team_per_target_and_the_preset_formation_when_it_matches():
+def test_scenario_uses_one_team_per_target_and_an_even_capped_split_without_a_plan():
     base = {"departure_lat": 54.48, "departure_lon": 18.32, "duration_min": 240}
     three = [(54.40, 18.54), (54.33, 18.36), (54.37, 18.50)]
     spec, _ = build_scenario({**base, "total_ugv": 9, "targets": three}, "balance", 0.3)
-    assert spec.formation == MODE_PRESETS["balance"]["formation"] and len(spec.pois) == 3   # 프리셋 편성
+    assert spec.formation == (3, 3, 3) and len(spec.pois) == 3         # 모드에 묶인 고정 편성은 없다
+    spec, _ = build_scenario({**base, "total_ugv": 13, "targets": three}, "balance", 0.3)
+    assert spec.formation == (3, 3, 3)                                  # 제대당 최대 3대
     spec, _ = build_scenario({**base, "total_ugv": 5, "targets": three[:2]}, "rush", 0.3)
     assert spec.formation == (3, 2) and spec.assignment == (0, 1)     # 균등 분배
     spec, _ = build_scenario({**base, "total_ugv": 4, "targets": []}, "explore", 0.3)
     assert len(spec.pois) == 3 and spec.formation == (2, 1, 1)         # 목표가 없으면 기본 정찰지 3곳
+
+
+def test_scenario_uses_the_planned_formation_for_the_mode_when_given():
+    base = {"departure_lat": 54.48, "departure_lon": 18.32, "duration_min": 240, "total_ugv": 9}
+    three = [(54.40, 18.54), (54.33, 18.36), (54.37, 18.50)]
+    for mode in ("balance", "explore", "rush"):                         # 같은 계산 결과라면 모드와 무관하게 주어진 편성을 쓴다
+        spec, _ = build_scenario({**base, "targets": three, "formation": (2, 1, 3)}, mode, 0.3)
+        assert spec.formation == (2, 1, 3) and spec.assignment == (0, 1, 2)
+    spec, _ = build_scenario({**base, "targets": three, "formation": (2, 1)}, "balance", 0.3)   # 제대 수와 안 맞으면 무시
+    assert spec.formation == (3, 3, 3)
 
 
 def test_scenario_turn_limit_follows_the_mission_duration():

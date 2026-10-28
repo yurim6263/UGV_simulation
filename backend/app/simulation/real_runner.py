@@ -36,7 +36,7 @@ from app.db.models.unit_state import RunQueueEvent, RunSosEvent, RunUnit
 from app.db.session import AsyncSessionLocal
 from app.simulation.algo.episode import TEAM_NAMES, Genes, ScenarioSpec, run_episode
 from app.simulation.contracts import WsEvent, make_event
-from app.simulation.presets import DEFAULT_POIS, MODE_PRESETS, WEATHER_SCALES, preset
+from app.simulation.presets import DEFAULT_POIS, WEATHER_SCALES, preset
 from app.simulation.shared_env import get_environment
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,6 @@ def even_split(total: int, parts: int) -> tuple:
 
 def build_scenario(mission: dict, mode: str, weather_scale: float) -> tuple[ScenarioSpec, Genes]:
     """임무 정보 → (ScenarioSpec, Genes). 목표 수만큼 제대를 만들고(최대 3) UGV 를 나눠 배정한다."""
-    explicit = bool(mission["targets"])             # 지휘관이 목표를 입력했는가 (아니면 기본 목표)
     pois = [tuple(p) for p in mission["targets"]] or list(DEFAULT_POIS)
     n_teams = max(1, min(3, len(pois), mission["total_ugv"]))
     pois = pois[:n_teams]
@@ -74,14 +73,12 @@ def build_scenario(mission: dict, mode: str, weather_scale: float) -> tuple[Scen
         max_turns=max(6, min(31, mission["duration_min"] // 10)),
         start=(mission["departure_lat"], mission["departure_lon"]), pois=pois,
     )
-    preset_formation = MODE_PRESETS[mode]["formation"]
-    if n_teams == len(preset_formation) and sum(preset_formation) == mission["total_ugv"]:
-        formation = preset_formation
-        # 최적화가 찾은 "제대 → 목표" 배정(순열)은 기본 목표(팀원 시나리오)에 맞춰 찾은 것이다. 지휘관이 목표를 입력했으면
-        # 입력 순서가 곧 배정이다 (목표 i 는 i제대). 그렇지 않으면 "2제대 목표"로 입력한 곳에 다른 제대가 간다.
-        assignment = tuple(range(n_teams)) if explicit else MODE_PRESETS[mode]["assignment"]
-    else:                                   # 편성이 프리셋과 다르면 균등 분배, 제대 i → 목표 i
-        formation, assignment = even_split(mission["total_ugv"], n_teams), tuple(range(n_teams))
+    # 제대 i → 목표 i (지휘관이 입력한 순서가 곧 배정이다). 모드에 묶인 고정 편성은 없다.
+    assignment = tuple(range(n_teams))
+    formation = tuple(mission["formation"]) if mission.get("formation") and len(mission["formation"]) == n_teams else None
+    if formation is None:
+        # 편성 계산이 없으면(직접 API 호출, 계산 실패 등) 보유 대수를 제대에 고르게, 제대당 1~3대로 나눈다
+        formation = tuple(max(1, min(3, x)) for x in even_split(min(mission["total_ugv"], 3 * n_teams), n_teams))
     # 정찰 시간: 제대 i 가 향하는 목표의 patrol_duration_sec 를 턴(10분)으로 올림
     patrol = mission.get("patrol_sec") or []
     dwell = tuple(
@@ -101,7 +98,10 @@ def baseline_genes() -> Genes:
 async def run_real(run_id: int) -> None:
     logger.info("real_runner started run_id=%d", run_id)
     mission, mode_key = await _load_mission(run_id)
-    spec, genes = build_scenario(mission, mode_key, _weather_scale())
+    scale = _weather_scale()
+    from app.services.plan_service import chosen_formation
+    mission["formation"] = await chosen_formation(mission, mode_key, scale)       # 편성 계산 결과 (없으면 None → 고르게 나눈다)
+    spec, genes = build_scenario(mission, mode_key, scale)
 
     await _reset_outputs(run_id)          # 같은 run 을 다시 실행해도 이전 산출물이 중복되지 않게
     env = await asyncio.to_thread(get_environment)

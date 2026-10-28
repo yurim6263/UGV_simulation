@@ -8,7 +8,6 @@ backend/app/tests/test_target_assignment.py
 import pytest
 from httpx import AsyncClient
 
-from app.simulation.presets import MODE_PRESETS
 from app.simulation.real_runner import build_scenario
 
 TARGETS = [(54.45, 18.40), (54.42, 18.36), (54.40, 18.50)]
@@ -23,7 +22,7 @@ def mission(targets, total=9, patrol=None):
 def test_commander_targets_are_assigned_in_order_for_every_mode(mode):
     spec, _ = build_scenario(mission(TARGETS), mode, 0.3)
     assert spec.assignment == (0, 1, 2)                         # i제대 → 목표 i
-    assert spec.formation == MODE_PRESETS[mode]["formation"]    # 편성(제대별 UGV 수)은 모드 프리셋을 그대로 쓴다
+    assert spec.formation == (3, 3, 3)                          # 계산 결과가 없으면 보유 대수를 고르게 (모드 고정 편성은 없다)
 
 
 def test_each_team_dwell_time_follows_its_own_target():
@@ -31,10 +30,10 @@ def test_each_team_dwell_time_follows_its_own_target():
     assert spec.dwell_turns == (1, 3, 5)
 
 
-def test_default_targets_keep_the_optimized_assignment_of_the_mode():
-    """목표를 입력하지 않으면 기본 목표(팀원 시나리오)로, 그 목표에 맞춰 최적화된 배정을 쓴다."""
+def test_default_targets_are_assigned_in_order_too():
+    """목표를 입력하지 않아도(기본 목표 3곳) 배정은 순서대로다. 최적화의 배정 순열은 더 이상 실행에 쓰이지 않는다."""
     spec, _ = build_scenario({**mission([]), "targets": []}, "balance", 0.3)
-    assert spec.assignment == MODE_PRESETS["balance"]["assignment"]
+    assert spec.assignment == (0, 1, 2) and len(spec.pois) == 3
 
 
 @pytest.mark.asyncio

@@ -35,7 +35,7 @@ import numpy as np
 
 from app.simulation.algo.episode import Genes, ScenarioSpec
 from app.simulation.batch import Job, run_batch
-from app.simulation.presets import MODE_PRESETS, preset
+from app.simulation.presets import DEFAULT_POIS, MODE_PRESETS, preset
 
 PLANNER_VERSION = 1
 MODES = ("balance", "explore", "rush")
@@ -57,6 +57,7 @@ class PlanInput:
     min_per_team: int = MIN_PER_TEAM
     max_per_team: int = MAX_PER_TEAM
     min_arrival: float = MIN_ARRIVAL
+    fleet: int = 9                      # 보유 UGV 수: 투입 합계가 이를 넘는 편성은 후보에서 뺀다
 
     @property
     def n_teams(self) -> int:
@@ -67,7 +68,8 @@ class PlanInput:
         return max(6, min(31, self.duration_min // 10))
 
     def formations(self) -> list[tuple]:
-        return list(itertools.product(range(self.min_per_team, self.max_per_team + 1), repeat=self.n_teams))
+        every = itertools.product(range(self.min_per_team, self.max_per_team + 1), repeat=self.n_teams)
+        return [f for f in every if sum(f) <= self.fleet]
 
     def cache_key(self) -> str:
         """같은 입력이면 같은 키. 계산 결과(편성 후보)를 다시 쓸 수 있는지 판단한다."""
@@ -76,9 +78,21 @@ class PlanInput:
             "v": PLANNER_VERSION, "start": [round(x, 5) for x in self.start],
             "targets": [[round(x, 5) for x in t] for t in self.targets], "patrol": list(self.patrol_sec),
             "duration": self.duration_min, "scale": round(self.weather_scale, 4), "seeds": list(self.seeds),
-            "range": [self.min_per_team, self.max_per_team], "min_arrival": self.min_arrival, "genes": genes,
+            "range": [self.min_per_team, self.max_per_team], "min_arrival": self.min_arrival, "genes": genes, "fleet": self.fleet,
         }
         return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def plan_input_for(mission: dict, weather_scale: float, seeds: tuple = SEEDS) -> PlanInput:
+    """임무 정보(real_runner._load_mission 의 dict)에서 계산기 입력을 만든다. 실행기와 같은 규칙(목표 수만큼 제대, 최대 3)을 쓴다."""
+    pois = [tuple(p) for p in mission["targets"]] or list(DEFAULT_POIS)
+    n = max(1, min(3, len(pois), mission["total_ugv"]))
+    patrol = list(mission.get("patrol_sec") or [])
+    return PlanInput(
+        start=(mission["departure_lat"], mission["departure_lon"]), targets=tuple(pois[:n]),
+        patrol_sec=tuple(patrol[i] if i < len(patrol) else 0 for i in range(n)), duration_min=mission["duration_min"],
+        weather_scale=weather_scale, seeds=seeds, fleet=mission["total_ugv"],
+    )
 
 
 # ── 제대 하나를 따로 시험 ────────────────────────────────────────────────
