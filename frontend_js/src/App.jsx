@@ -14,7 +14,7 @@ import ForecastPanel from "./replay/ForecastPanel";
 import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
-import { FLEET_UGV, GRADE_COLOR, REPLAY_SOURCES, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, formationText, scopedKpi, teamRedRatio } from "./replay/replayModel";
+import { FLEET_UGV, GRADE_COLOR, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, formationText, scopedKpi, teamRedRatio } from "./replay/replayModel";
 
 const MAP_BOUNDS = [[54.2977, 18.2640], [54.5209, 18.6479]];
 const TEAM_ORDER = ["Alpha", "Bravo", "Charlie"];
@@ -362,8 +362,7 @@ function Seg({ value, options, onChange, disabled, hints }) {
 }
 
 function MainDashboard({ account, onLogout }) {
-  const [source, setSource] = useState("server");
-  const replay = useReplay(source);
+  const replay = useReplay("server");               // 재생 데이터는 서버가 방금 계산한 결과뿐이다 (고정된 저장본 출처는 없앴다)
   const [tab, setTab] = useState("events");
   const [notice, setNotice] = useState("");
   const notify = (text) => { setNotice(text); setTimeout(() => setNotice(""), 2400); };
@@ -416,12 +415,6 @@ function MainDashboard({ account, onLogout }) {
           <section>
             <h2 className="h">지도 표시</h2>
             <Seg value={replay.overlay} options={Object.entries(OVERLAY_LABEL)} onChange={replay.setOverlay} />
-          </section>
-          <section>
-            <h2 className="h">데이터 출처</h2>
-            <Seg value={source} options={Object.entries(REPLAY_SOURCES).map(([k, s]) => [k, s.label])} onChange={setSource}
-              hints={Object.fromEntries(Object.entries(REPLAY_SOURCES).map(([k, s]) => [k, s.desc]))} />
-            <p className="hint tight">{REPLAY_SOURCES[source].desc}</p>
           </section>
           {model && (
             <section>

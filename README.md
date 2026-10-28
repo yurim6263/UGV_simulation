@@ -177,7 +177,7 @@ npm.cmd run dev
 - `backend/data/optimization/pareto.json`이 있으면 서버가 이 결과의 신속/정밀/균형 원형의 **전술 성향(유전자)**을 모드 설정으로 씁니다. `SIM_PRESETS=reference`로 팀원 기준 프리셋을 강제할 수 있습니다. **제대별 UGV 수(편성)는 모드에 고정되어 있지 않고** 편성 계산기가 목표 위치에서 계산합니다.
 - `python backend/scripts/precompute_formation.py`는 기본 목표의 편성 계산을 미리 해 둡니다(`backend/data/formation/default_plan.json`). 엔진이나 모드 전술이 바뀌면 다시 실행하세요.
 - 시뮬레이션 환경변수: `SIM_WEATHER_SCALE`(clear / moderate / severe 또는 0~1, 기본 moderate), `SIM_TICK_SLEEP`(턴 사이 대기 초).
-- 대시보드의 "데이터 출처"는 **서버 실행**(요청 때마다 계산), **팀원 기록**과 **엔진 실행**(미리 저장해 둔 사본)입니다. 저장본은 스크립트를 다시 돌려야 갱신됩니다.
+- 대시보드는 **서버가 방금 계산한 결과**만 재생합니다. 예전에 있던 "팀원 기록"과 "엔진 실행" 출처(고정된 저장본)는 목표를 바꿔도 변하지 않고 옛 고정 편성을 담고 있어서 화면에서 뺐습니다. `frontend_js/static/replay*` 폴더와 변환 스크립트(`export_replay.py`, `run_episode.py`)는 참고용으로 남아 있습니다.
 
 ## 프로젝트 구조
 
