@@ -4,9 +4,9 @@ import { TEAM_UNIT } from "./replayModel";
 // NSGA-II 최적화 결과: 파레토 곡선(수색 면적 x 작전 시간) + 탈락한 개체의 분포 + 전술 메뉴판(신속/정밀/균형).
 // 데이터: static/optimization/pareto.json (backend/scripts/run_nsga2.py 가 만든 결과의 사본)
 const MODES = [
-  { key: "rush", label: "신속", color: "#f43f5e" },
-  { key: "balance", label: "균형", color: "#e67e22" },
-  { key: "explore", label: "정밀", color: "#38bdf8" },
+  { key: "rush", label: "신속", color: "#7dd3fc" },
+  { key: "balance", label: "균형", color: "#e6edf3" },
+  { key: "explore", label: "정밀", color: "#c4b5fd" },
 ];
 const W = 300;
 const H = 190;

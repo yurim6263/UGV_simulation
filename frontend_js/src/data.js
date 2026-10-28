@@ -7,9 +7,9 @@ export const initialTargets = {
 };
 
 export const units = [
-  { key: "user1", name: "1제대", color: "#f97316", success: 78, risk: 35, depart: "02:20:00", arrive: "05:20:00" },
-  { key: "user2", name: "2제대", color: "#22d3ee", success: 64, risk: 57, depart: "02:10:00", arrive: "05:50:00" },
-  { key: "user3", name: "3제대", color: "#f472b6", success: 86, risk: 22, depart: "02:30:00", arrive: "06:10:00" },
+  { key: "user1", name: "1제대", color: "#4d8dff", success: 78, risk: 35, depart: "02:20:00", arrive: "05:20:00" },
+  { key: "user2", name: "2제대", color: "#b07cff", success: 64, risk: 57, depart: "02:10:00", arrive: "05:50:00" },
+  { key: "user3", name: "3제대", color: "#ff8fb1", success: 86, risk: 22, depart: "02:30:00", arrive: "06:10:00" },
 ];
 
 export const ltwrMaps = [

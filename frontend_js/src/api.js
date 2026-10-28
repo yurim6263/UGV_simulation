@@ -111,3 +111,9 @@ export async function fetchServerReplay() {
 }
 
 export const overlayUrl = (kind, turn) => `${API_URL}/api/map/overlay/${kind}/${turn}.png`;
+
+// ── AI 어시스턴트 ────────────────────────────────────────────────────────
+
+export const assistantStatus = () => request("/api/assistant/status");
+// 반환: { answer, evidences: [{id, tool, args, result, denied, error}], warnings, model, latency_ms }
+export const askAssistant = (question) => request("/api/assistant/ask", { method: "POST", body: { question } });

@@ -20,7 +20,8 @@ MODES = {"balance": "균형", "explore": "정밀", "rush": "신속"}
 TEAMS = ["Alpha", "Bravo", "Charlie"]
 SOS_ACTIONS = ("SOS_MOBILITY", "SOS_SENSOR", "SOS_COMPLEX_FAILURE")
 GRADES = ["G", "A", "R"]
-GAR = {"G": (46, 204, 113, 140), "A": (241, 196, 15, 140), "R": (231, 76, 60, 140)}
+# 오버레이 색. 안전(G)은 거의 투명하게 해서 아래 지도가 비치고, 주의·고위험만 눈에 띄게 한다.
+GAR = {"G": (63, 182, 139, 45), "A": (242, 181, 68, 135), "R": (240, 100, 78, 150)}
 OVERLAY_COLUMNS = {"total": "normalized_c_total", "mobility": "c_mob_prime", "sensor": "c_sen_prime"}
 OPTIONAL_COLUMNS = ["rain_mmph", "swvl1", "sde_m", "fog_prob", "vis_class"]
 

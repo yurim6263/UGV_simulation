@@ -11,8 +11,9 @@ export const replayBase = (source) => (REPLAY_SOURCES[source].dir ? `${import.me
 
 export const TEAM_UNIT = { Alpha: "1제대", Bravo: "2제대", Charlie: "3제대" };
 export const USER_TEAM = { user1: "Alpha", user2: "Bravo", user3: "Charlie" };
-export const TEAM_COLOR = { Alpha: "#f97316", Bravo: "#22d3ee", Charlie: "#f472b6" };
-export const GRADE_COLOR = { G: "#2ecc71", A: "#f1c40f", R: "#e74c3c" };
+// 색의 주인공은 위험 등급(G/A/R)이다. 제대 색은 위험 색과 겹치지 않게 파랑·보라·분홍으로 둔다.
+export const TEAM_COLOR = { Alpha: "#4d8dff", Bravo: "#b07cff", Charlie: "#ff8fb1" };
+export const GRADE_COLOR = { G: "#3fb68b", A: "#f2b544", R: "#f0644e" };
 
 const ACTION_LABEL = {
   MISSION: "기동", HOLD_PACE: "대열 대기", HOLD_EMERGENCY: "비상 대기", NO_AP: "행동력 소진",

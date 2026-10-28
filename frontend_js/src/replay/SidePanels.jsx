@@ -3,7 +3,7 @@ import {
   GRADE_COLOR, KPI_ROWS, TEAM_COLOR, TEAM_UNIT, actionLabel, agentLabel, elapsedLabel, scopedKpi, stateAt,
 } from "./replayModel";
 
-// 임무 요약: 선택한 모드의 KPI + 다른 모드와 한눈에 비교
+// 임무 요약: 선택한 모드의 KPI 카드 + 다른 모드와 한눈에 비교
 export function KpiSummary({ replay, team }) {
   const { models, mode, scenario } = replay;
   const all = useMemo(
@@ -12,13 +12,13 @@ export function KpiSummary({ replay, team }) {
   );
   const cur = all[mode];
   return (
-    <section className="mission-summary">
-      <h2>임무 요약 <small className="basis">{team ? TEAM_UNIT[team] : "전체"} · 시뮬레이션 1회 기록 기준</small></h2>
+    <section className="kpis">
+      <p className="kpis-basis">{team ? TEAM_UNIT[team] : "전체"} · 시뮬레이션 1회 기록 기준</p>
       {KPI_ROWS.map(([label, get, unit]) => (
-        <div className="summary-row" key={label}>
-          <span>{label}</span>
-          <b>{get(cur)}<small>{unit}</small></b>
-          <em className="compare">
+        <div className={`kpi ${label.startsWith("SOS") ? "alert" : ""}`} key={label}>
+          <small>{label}</small>
+          <b>{get(cur)}<u>{unit}</u></b>
+          <em>
             {scenario.modes.map((m) => (
               <i key={m.key} className={m.key === mode ? "on" : ""}>{m.label} {get(all[m.key])}</i>
             ))}
