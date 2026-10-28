@@ -13,7 +13,7 @@ import ForecastPanel from "./replay/ForecastPanel";
 import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
-import { startIcon, targetIcon } from "./replay/mapMarkers";
+import { ICON_SCALE, startIcon, targetIcon } from "./replay/mapMarkers";
 import { FLEET_UGV, GRADE_COLOR, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, formationText, scopedKpi, teamRedRatio } from "./replay/replayModel";
 
 const MAP_BOUNDS = [[54.2977, 18.2640], [54.5209, 18.6479]];
@@ -140,7 +140,7 @@ function InputMap({ targets }) {
       <ImageOverlay url={`${API_URL}/api/map/tactical/terrain-image`} bounds={MAP_BOUNDS} opacity={0.55} />
       <ImageOverlay url={`${API_URL}/api/map/tactical/cost-image?layer=risk`} bounds={MAP_BOUNDS} opacity={0.6} />
       <Marker position={[54.48, 18.32]} icon={startIcon()} interactive={false}>
-        <Tooltip permanent direction="top" offset={[0, -34]}>출발지</Tooltip>
+        <Tooltip permanent direction="top" offset={[0, Math.round(-34 * ICON_SCALE)]}>출발지</Tooltip>
       </Marker>
       {Object.entries(targets).filter(([, t]) => validPoint(t)).map(([key, t], i) => (
         <Marker key={key} position={[Number(t.lat), Number(t.lng)]} icon={targetIcon(TEAM_COLOR[USER_TEAM[key]], i + 1)} interactive={false} />

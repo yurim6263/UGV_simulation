@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { ImageOverlay, MapContainer, Marker, Polyline, Tooltip } from "react-leaflet";
 import BaseMap from "./BaseMap";
-import { mannedIcon, headingDeg, startIcon, targetIcon, ugvIcon } from "./mapMarkers";
+import { ICON_SCALE, mannedIcon, headingDeg, startIcon, targetIcon, ugvIcon } from "./mapMarkers";
 import { TEAM_COLOR, TEAM_UNIT, agentLabel, pathAt, stateAt } from "./replayModel";
 
 const CASING = "#070b10";
@@ -67,13 +67,13 @@ export default function ReplayMap({ replay, allowedTeams, compact = false }) {
       />
 
       <Marker position={scenario.start} icon={startIcon()} interactive={false}>
-        <Tooltip permanent direction="top" offset={[0, -34]}>출발지</Tooltip>
+        <Tooltip permanent direction="top" offset={[0, Math.round(-34 * ICON_SCALE)]}>출발지</Tooltip>
       </Marker>
       {scenario.pois.map((p) => {
         const owner = poiOwner[p.id];
         return (
           <Marker key={p.id} position={[p.lat, p.lon]} icon={targetIcon(TEAM_COLOR[owner] ?? "#94a3b8", p.id)} interactive={false}>
-            <Tooltip permanent direction="top" offset={[0, -24]}>목표 {p.id}{owner ? ` · ${TEAM_UNIT[owner]}` : ""}</Tooltip>
+            <Tooltip permanent direction="top" offset={[0, Math.round(-24 * ICON_SCALE)]}>목표 {p.id}{owner ? ` · ${TEAM_UNIT[owner]}` : ""}</Tooltip>
           </Marker>
         );
       })}
@@ -91,7 +91,7 @@ export default function ReplayMap({ replay, allowedTeams, compact = false }) {
         if (!s) return null;
         const pos = [s.lat, s.lon];
         const select = { click: () => setSelected(agent.id) };
-        const tip = <Tooltip offset={[0, -12]}>{agentLabel(agent)}</Tooltip>;
+        const tip = <Tooltip offset={[0, Math.round(-12 * ICON_SCALE)]}>{agentLabel(agent)}</Tooltip>;
         if (agent.kind === "Manned") {
           const heading = path.length > 1 ? headingDeg(path[path.length - 2], path[path.length - 1]) : 0;
           return <Marker key={agent.id} position={pos} icon={mannedIcon(TEAM_COLOR[agent.team], heading)} zIndexOffset={300} eventHandlers={select}>{tip}</Marker>;

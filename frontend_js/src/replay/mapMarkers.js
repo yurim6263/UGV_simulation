@@ -4,14 +4,17 @@ import { GRADE_COLOR } from "./replayModel";
 // 지도 아이콘. 모양은 역할, 색은 제대, UGV 의 안쪽 색은 위험 등급(상태)이다.
 // 같은 모양은 한 번만 만들어 재사용한다 (재생 중 프레임마다 아이콘을 새로 만들지 않기 위해).
 const DARK = "#070b10";
+export const ICON_SCALE = 2 / 3;                 // 아이콘 표시 크기 (그린 크기 대비)
 const cache = new Map();
 const once = (key, build) => {
   if (!cache.has(key)) cache.set(key, build());
   return cache.get(key);
 };
-const icon = (svg, size, anchor) => L.divIcon({
-  html: svg, iconSize: [size[0], size[1]], iconAnchor: anchor, className: "leaflet-marker-wrapper",
-});
+const icon = (svg, size, anchor) => {
+  const px = (v) => Math.round(v * ICON_SCALE);
+  const sized = svg.replace(/width="(\d+)" height="(\d+)"/, (_, w, h) => `width="${px(w)}" height="${px(h)}"`);
+  return L.divIcon({ html: sized, iconSize: [px(size[0]), px(size[1])], iconAnchor: [px(anchor[0]), px(anchor[1])], className: "leaflet-marker-wrapper" });
+};
 
 // UGV: 안쪽 = 상태색(G/A/R), 테두리 = 제대색. 경보(SOS, 시야 상실)면 고리가 번져 나가고, 선택되면 흰 고리가 생긴다.
 export function ugvIcon(teamColor, grade, { alarm = false, selected = false } = {}) {
