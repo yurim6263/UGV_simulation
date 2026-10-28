@@ -91,7 +91,10 @@ async def main(args) -> int:
             results = await run_eval(model, db, run_id)
         except ModelError as exc:
             print(f"\n모델 호출 실패: {exc}", file=sys.stderr)
-            print("모델 이름 문제라면 backend/.env 의 GEMINI_MODEL 을 AI Studio 에 보이는 이름으로 바꾸세요.", file=sys.stderr)
+            if "404" in str(exc):
+                print("모델 이름 문제입니다. backend/.env 의 GEMINI_MODEL 을 AI Studio 에 보이는 이름으로 바꾸세요.", file=sys.stderr)
+            elif any(c in str(exc) for c in ("429", "503")):
+                print("구글 서버가 붐비거나 호출 한도에 걸렸습니다. 잠시 뒤 다시 하거나 --delay 값을 늘리세요.", file=sys.stderr)
             return 2
     summary = summarize(results)
 

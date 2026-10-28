@@ -16,9 +16,15 @@ SDK 의 실제 타입으로 확인하지만, 네트워크 호출 자체는 키�
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.assistant.schema import Message, ModelError, ModelTurn, ToolCall, ToolSpec
+
+
+TRANSIENT = (429, 500, 502, 503, 504)      # 잠시 뒤 다시 하면 되는 오류 (한도 초과, 서버 과부하)
+RETRIES = 4
+BACKOFF_SEC = 3.0                            # 3, 6, 12, 24초 간격으로 다시 시도
 
 
 class GeminiClient:
@@ -99,10 +105,15 @@ class GeminiClient:
             system_instruction=system, tools=self.declarations(tools) or None, temperature=self.temperature,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
-        try:
-            response = await self._client.aio.models.generate_content(model=self.model, contents=self.contents(messages), config=config)
-        except ModelError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — 공급자 예외 종류가 많다. 키를 지우고 하나의 오류로 바꾼다.
-            raise ModelError(f"Gemini 호출 실패 ({type(exc).__name__}): {str(exc).replace(self._api_key, '***')[:300]}") from exc
+        for attempt in range(RETRIES + 1):
+            try:
+                response = await self._client.aio.models.generate_content(model=self.model, contents=self.contents(messages), config=config)
+                break
+            except ModelError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — 공급자 예외 종류가 많다. 키를 지우고 하나의 오류로 바꾼다.
+                if getattr(exc, "code", None) in TRANSIENT and attempt < RETRIES:
+                    await asyncio.sleep(BACKOFF_SEC * 2 ** attempt)
+                    continue
+                raise ModelError(f"Gemini 호출 실패 ({type(exc).__name__}): {str(exc).replace(self._api_key, '***')[:300]}") from exc
         return self.parse(response)

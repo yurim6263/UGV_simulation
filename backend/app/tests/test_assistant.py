@@ -432,3 +432,52 @@ async def test_eval_harness_passes_for_rule_based_model_and_fails_for_a_leaky_on
     assert "scope" in failed["sos_count_operator"] and "fact" in failed["sos_count_operator"]
     assert "tool" in failed["compare_modes"] and "refuse" in failed["out_of_scope"]
     assert summarize(bad)["passed"] < len(CASES) // 2
+
+
+class _CodedError(Exception):
+    def __init__(self, code, msg="x"):
+        super().__init__(msg)
+        self.code = code
+
+
+class _FlakyAio(FakeAio):
+    def __init__(self, response, fail_codes):
+        super().__init__(response)
+        self.fail_codes, self.calls = list(fail_codes), 0
+
+    async def generate_content(self, **kwargs):
+        self.calls += 1
+        if self.fail_codes:
+            raise _CodedError(self.fail_codes.pop(0), "503 UNAVAILABLE high demand")
+        return self.response
+
+
+@pytest.mark.asyncio
+async def test_gemini_retries_transient_errors_then_succeeds(monkeypatch):
+    from google.genai import types
+    from app.assistant import gemini
+
+    slept = []
+    async def fake_sleep(s): slept.append(s)
+    monkeypatch.setattr(gemini.asyncio, "sleep", fake_sleep)
+    aio = _FlakyAio(_response([types.Part(text="답")]), [503, 429])
+    client = GeminiClient("k", "m", client=SimpleNamespace(aio=aio))
+    turn = await client.next("s", [Message("user", text="q")], [])
+    assert turn.text == "답" and aio.calls == 3 and slept == [3.0, 6.0]
+
+
+@pytest.mark.asyncio
+async def test_gemini_gives_up_after_retries_and_does_not_retry_permanent_errors(monkeypatch):
+    from google.genai import types
+    from app.assistant import gemini
+
+    async def fake_sleep(s): pass
+    monkeypatch.setattr(gemini.asyncio, "sleep", fake_sleep)
+    always = _FlakyAio(_response([types.Part(text="x")]), [503] * 10)
+    with pytest.raises(ModelError):
+        await GeminiClient("k", "m", client=SimpleNamespace(aio=always)).next("s", [Message("user", text="q")], [])
+    assert always.calls == gemini.RETRIES + 1
+    notfound = _FlakyAio(_response([types.Part(text="x")]), [404])
+    with pytest.raises(ModelError):
+        await GeminiClient("k", "m", client=SimpleNamespace(aio=notfound)).next("s", [Message("user", text="q")], [])
+    assert notfound.calls == 1                                  # 404 는 다시 해도 소용없다
