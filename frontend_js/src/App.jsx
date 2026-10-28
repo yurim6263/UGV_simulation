@@ -10,6 +10,7 @@ import TeamTimeline from "./replay/TeamTimeline";
 import AssistantPanel from "./replay/AssistantPanel";
 import FormationPanel from "./replay/FormationPanel";
 import ForecastPanel from "./replay/ForecastPanel";
+import WeatherLegend from "./replay/WeatherLegend";
 import { MODE_FOCUS, pickRow, usePlan } from "./replay/usePlan";
 import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
@@ -25,7 +26,7 @@ const MODES = [
   { label: "신속", key: "rush" },
 ];
 const MODE_NAME = Object.fromEntries(MODES.map((m) => [m.key, m.label]));
-const OVERLAY_LABEL = { total: "종합", mobility: "기동성", sensor: "센서" };
+const OVERLAY_LABEL = { total: "종합", mobility: "기동성", sensor: "센서", weather: "기상" };
 
 
 function Logo({ size = 28 }) {
@@ -573,7 +574,7 @@ function MainDashboard({ account, onLogout }) {
             {model && (
               <>
                 <div className="map-fill replay-map"><ReplayMap replay={replay} allowedTeams={allowedTeams} /></div>
-                <div className="map-legend-pos"><RiskLegend /></div>
+                <div className="map-legend-pos">{replay.overlay === "weather" ? <WeatherLegend turn={turn} /> : <RiskLegend />}</div>
                 <div className="turn"><small>경과</small><b className="num">{elapsedLabel(turn)}</b><small className="num">턴 {turn + 1} / {model.kpi.turns}</small></div>
                 <ReplayControls replay={replay} allowedTeams={allowedTeams} />
               </>

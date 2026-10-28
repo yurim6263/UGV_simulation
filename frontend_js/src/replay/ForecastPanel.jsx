@@ -27,7 +27,7 @@ export default function ForecastPanel({ replay, allowedTeams }) {
   const [lead, setLead] = useState(60);
   const [info, setInfo] = useState(null);
   const turn = replay.model.frames[replay.frame].turn;
-  const kind = replay.overlay;
+  const kind = replay.overlay === "weather" ? "total" : replay.overlay;      // 예보 지도는 위험도 예보만 있다 (기상 지표 예보는 없음)
 
   useEffect(() => {
     let cancelled = false;

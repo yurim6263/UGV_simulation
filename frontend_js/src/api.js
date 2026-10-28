@@ -148,7 +148,9 @@ export const setTeamModes = (missionId, teamModes) => request(`/api/missions/${m
 // 제대마다 지정한 모드의 기록을 합친 재생 데이터 (재계산 없음)
 export const fetchAssigned = (missionId) => request(`/api/missions/${missionId}/assigned-replay`);
 
-export const overlayUrl = (kind, turn) => `${API_URL}/api/map/overlay/${kind}/${turn}.png`;
+// 지도 표시 "기상"은 원시 기상(ERA5)으로 만든 지표 이미지, 나머지는 위험도(G/A/R) 이미지
+export const overlayUrl = (kind, turn) => (kind === "weather" ? `${API_URL}/api/map/weather/${turn}.png` : `${API_URL}/api/map/overlay/${kind}/${turn}.png`);
+export const weatherInfo = () => request("/api/map/weather/info", { auth: false });
 
 // ── AI 어시스턴트 ────────────────────────────────────────────────────────
 
