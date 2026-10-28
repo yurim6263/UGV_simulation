@@ -167,3 +167,27 @@ export function teamRedRatio(model) {
   }
   return out;
 }
+
+// ── 제대별 타임라인 ──────────────────────────────────────────────────────
+const GRADE_RANK = { G: 1, A: 2, R: 3 };
+
+// 한 제대의 턴별 칸: 그 턴에 UGV 가 있던 칸 중 가장 나쁜 등급. 기록이 없으면 null, 제대가 도착한 뒤면 done.
+// 이벤트: SOS / 운용자 개입 / 도착 (턴 번호 포함). 지도 재생과 같은 model 에서 만든다.
+export function teamTimeline(model, team) {
+  const turns = model.kpi.turns;
+  const pt = model.kpi.per_team[team];
+  const lastActive = pt?.arrive_turn == null ? turns - 1 : pt.arrive_turn;
+  const worst = new Array(turns).fill(null);
+  model.tracks.forEach((track, i) => {
+    const a = model.agents[i];
+    if (a.kind !== "UGV" || a.team !== team) return;
+    for (const s of track) {
+      if (s.turn >= turns) continue;
+      if (!worst[s.turn] || GRADE_RANK[s.grade] > GRADE_RANK[worst[s.turn]]) worst[s.turn] = s.grade;
+    }
+  });
+  const cells = worst.map((grade, turn) => ({ turn, grade, done: turn > lastActive }));
+  const events = model.events.filter((e) => e.team === team && e.turn < turns)
+    .map((e) => ({ type: e.type, turn: e.turn, frame: e.frame, text: e.text }));
+  return { cells, events, turns };
+}

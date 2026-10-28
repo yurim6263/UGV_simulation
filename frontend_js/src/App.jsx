@@ -7,6 +7,7 @@ import { useReplay } from "./replay/useReplay";
 import BaseMap from "./replay/BaseMap";
 import ReplayMap from "./replay/ReplayMap";
 import ReplayControls from "./replay/ReplayControls";
+import TeamTimeline from "./replay/TeamTimeline";
 import AssistantPanel from "./replay/AssistantPanel";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
@@ -361,18 +362,21 @@ function MainDashboard({ account, onLogout }) {
           {account.role === "commander" && <button className="btn primary block big push" onClick={() => notify("임무를 통제관에게 하달했습니다.")}>임무 하달</button>}
         </aside>
 
-        <section className="stage">
-          {replay.error && <p className="status error">{replay.error}</p>}
-          {replay.loading && <p className="status">재생 데이터를 불러오는 중…</p>}
-          {model && (
-            <>
-              <div className="map-fill replay-map"><ReplayMap replay={replay} allowedTeams={allowedTeams} /></div>
-              <div className="map-legend-pos"><RiskLegend /></div>
-              <div className="turn"><small>경과</small><b className="num">{elapsedLabel(turn)}</b><small className="num">턴 {turn + 1} / {model.kpi.turns}</small></div>
-              <ReplayControls replay={replay} allowedTeams={allowedTeams} />
-            </>
-          )}
-        </section>
+        <div className="center">
+          <section className="stage">
+            {replay.error && <p className="status error">{replay.error}</p>}
+            {replay.loading && <p className="status">재생 데이터를 불러오는 중…</p>}
+            {model && (
+              <>
+                <div className="map-fill replay-map"><ReplayMap replay={replay} allowedTeams={allowedTeams} /></div>
+                <div className="map-legend-pos"><RiskLegend /></div>
+                <div className="turn"><small>경과</small><b className="num">{elapsedLabel(turn)}</b><small className="num">턴 {turn + 1} / {model.kpi.turns}</small></div>
+                <ReplayControls replay={replay} allowedTeams={allowedTeams} />
+              </>
+            )}
+          </section>
+          {model && <TeamTimeline replay={replay} allowedTeams={allowedTeams} />}
+        </div>
 
         <aside className="right">
           {model ? <KpiSummary replay={replay} team={myTeam} /> : <section className="kpis"><p className="kpis-basis">임무 요약</p></section>}

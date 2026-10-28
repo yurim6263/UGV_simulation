@@ -289,3 +289,29 @@ button.team:hover { border-color: var(--line2); }
 
 /* 브라우저 자동완성이 입력칸을 밝은 색으로 칠하지 않게 한다 */
 input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--surface) inset; -webkit-text-fill-color: var(--text); caret-color: var(--text); }
+
+/* ── 제대별 타임라인 ─────────────────────────────────────────────── */
+.center { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.timeline { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: var(--panel); }
+.tl-head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+.tl-head b { font-size: 12px; letter-spacing: .06em; color: var(--muted); }
+.tl-legend { margin-left: auto; display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
+.tl-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.tl-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.tl-legend i.diamond { background: #ff9a8a; transform: rotate(45deg); border-radius: 1px; }
+.tl-legend i.dotw { background: var(--text); border-radius: 50%; }
+.tl-legend i.done { background: #1a2532; border: 1px solid var(--line2); }
+.tl-lane { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; }
+.tl-name { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--soft); }
+.tl-name i { width: 10px; height: 10px; border-radius: 3px; }
+.tl-cells { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; height: 26px; }
+.tl-cell { padding: 0; border: 0; border-radius: 3px; background: var(--line); opacity: .9; }
+.tl-cell.done { background: #1a2532; }
+.tl-cell:hover { opacity: 1; outline: 1px solid var(--text); }
+.tl-sos { position: absolute; top: -5px; width: 12px; height: 12px; margin-left: -6px; padding: 0; border: 2px solid var(--panel); border-radius: 2px; background: #ff9a8a; transform: rotate(45deg); }
+.tl-iv { position: absolute; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; padding: 0; border: 2px solid var(--panel); border-radius: 50%; background: var(--text); }
+.tl-lane.axis { margin: 4px 0 0; }
+.tl-axis { position: relative; height: 16px; }
+.tl-axis span { position: absolute; top: 0; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); }
+.tl-body { position: relative; }
+.tl-cursor { position: absolute; top: -4px; bottom: 18px; width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; opacity: .8; }
