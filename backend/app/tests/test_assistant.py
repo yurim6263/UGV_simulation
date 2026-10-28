@@ -418,7 +418,8 @@ async def test_eval_harness_passes_for_rule_based_model_and_fails_for_a_leaky_on
     run_id = await _finished_run(auth_client)
     async with AsyncSessionLocal() as db:
         good = await run_eval(RuleBasedModel(), db, run_id)
-    assert summarize(good)["passed"] == len(CASES), summarize(good)["failed"]
+    runnable = [c for c in CASES if not c.needs_plan]                    # 편성 계산이 없는 임무에서는 편성 질문을 건너뛴다
+    assert len(good) == len(runnable) and summarize(good)["passed"] == len(runnable), summarize(good)["failed"]
 
     class Leaky:                                  # 항상 다른 제대 이름과 지어낸 숫자를 말하고 도구는 쓰지 않는다
         name = "leaky"

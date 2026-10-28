@@ -365,3 +365,40 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--surface) inset; -
 .share-row em { font-style: normal; text-align: right; color: var(--muted); }
 .share-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
 .share-bar i { display: block; height: 100%; }
+
+/* 실행 중: 단계 목록 */
+.launch { width: min(520px, 92vw); }
+.steps { width: 100%; margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; text-align: left; }
+.steps li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; color: var(--muted); }
+.steps li em { font-style: normal; }
+.steps li.now { border-color: var(--text); color: var(--text); }
+.steps li.done { color: var(--soft); }
+.steps li.done em { color: var(--risk-g); }
+
+.mode .mode-form { display: block; margin-top: 6px; font-size: 12px; color: var(--soft); }
+.mode .mode-form b { color: var(--text); font-weight: 600; }
+
+/* 편성 탭 */
+.formation { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px; }
+.fm-intro { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 12px; line-height: 1.6; color: var(--soft); }
+.fm-intro b { color: var(--text); }
+.fm-picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; flex: none; }
+.fm-picks button { padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-align: center; }
+.fm-picks button.on { border-color: var(--text); background: var(--surface2); }
+.fm-picks small { display: block; font-size: 11px; color: var(--muted); }
+.fm-picks b { display: block; font-size: 17px; font-weight: 500; }
+.fm-picks span { font-size: 11px; color: var(--soft); }
+.fm-reason { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--soft); }
+.fm-filter { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.fm-table { min-height: 0; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.fm-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fm-table th { position: sticky; top: 0; padding: 0; background: var(--surface2); text-align: right; }
+.fm-table th:first-child { text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.fm-table th button { width: 100%; padding: 6px 8px; border: 0; background: transparent; text-align: right; font-size: 11px; color: var(--muted); }
+.fm-table th button.on { color: var(--text); font-weight: 600; }
+.fm-table td { padding: 5px 8px; text-align: right; border-top: 1px solid var(--line); color: var(--soft); }
+.fm-table td:first-child { text-align: left; color: var(--text); font-weight: 500; white-space: nowrap; }
+.fm-table td em { margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 400; color: var(--link); }
+.fm-table td.bad { color: var(--risk-r); }
+.fm-table tr.pick td { background: #4d8dff14; }
+.par { margin-left: 4px; font-size: 9px; font-style: normal; color: var(--risk-g); }

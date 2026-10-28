@@ -60,7 +60,8 @@ class RuleBasedModel:
     name = "rule-based"
 
     ROUTES = [
-        (("규칙", "공식", "교범", "목줄", "확률", "어떻게 계산", "얼마나 멀어", "뜻이", "정의", "비용은"), "search_docs"),
+        (("투입 대수", "왜 그렇게 정해"), "get_formation_plan"),
+        (("규칙을 알려", "규칙에서", "규칙이", "규칙은", "공식", "교범", "목줄", "확률", "어떻게 계산", "얼마나 멀어", "뜻이", "정의", "비용은"), "search_docs"),   # "규칙을 무시하고" 같은 주입 문장은 걸리지 않게 구체적으로
         (("최적화", "파레토", "전술 메뉴", "편성"), "get_optimization_results"),
         (("예보", "정확도", "지속성"), "get_forecast_quality"),
         (("모드 비교", "모드별", "균형", "정밀", "신속"), "compare_modes"),
@@ -120,6 +121,11 @@ class RuleBasedModel:
             return "; ".join(parts) + ". 구간이 겹치는 비교는 단정할 수 없습니다."
         if call.name == "get_forecast_quality":
             return f"예보의 평균 skill은 {data['mean_skill']:.2f}로 지속성보다 낮습니다 [{eid}]."
+        if call.name == "get_formation_plan":
+            m = data["modes"]["balance"]
+            f = "-".join(str(x) for x in m["pick"]["formation"])
+            return (f"균형 모드는 {f}({m['pick']['ugv_total']}대 투입)입니다. 이유: {m['pick']['reason']} "
+                    f"수색 {m['pick_metrics']['coverage_pct']}%, 작전 시간 {m['pick_metrics']['mission_minutes']}분 [{eid}]. 시뮬레이션 추정이라 작은 차이는 우연일 수 있습니다.")
         if call.name == "search_docs":
             if not data["results"]:
                 return f"문서에서 찾을 수 없습니다. 문서에 없는 내용입니다 [{eid}]."

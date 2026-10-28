@@ -58,8 +58,8 @@ export async function login(username, password) {
 
 const MODES = [["balance", "balanced"], ["explore", "recon"], ["rush", "rapid"]];   // 화면 모드 → 서버 모드
 
-// 임무를 만들고 3개 모드의 시뮬레이션을 동시에 시작한다
-export async function launchMission({ targets, totalUgv = 9, durationMin = 240, start = [54.48, 18.32] }) {
+// 1) 임무와 목표를 만든다 (보유 UGV 9대, 제대마다 투입 대수는 편성 계산이 정한다)
+export async function createMission({ targets, totalUgv = 9, durationMin = 240, start = [54.48, 18.32] }) {
   const mission = await request("/api/missions", {
     method: "POST",
     body: {
@@ -71,12 +71,34 @@ export async function launchMission({ targets, totalUgv = 9, durationMin = 240, 
     method: "POST",
     body: targets.map((t, i) => ({ seq: i + 1, lat: t.lat, lon: t.lon, patrol_duration_sec: t.patrolSec })),
   });
+  return mission.id;
+}
+
+// 2) 편성 계산 (제대당 UGV 1~3대). 시작하고 끝날 때까지 진행률을 알려 준다. 같은 입력의 저장된 결과가 있으면 바로 끝난다.
+export const getPlan = (missionId) => request(`/api/missions/${missionId}/plan`);
+
+export async function planFormation(missionId, onProgress, { intervalMs = 1000, timeoutMs = 900000 } = {}) {
+  let state = await request(`/api/missions/${missionId}/plan`, { method: "POST" });
+  onProgress?.(state);
+  const deadline = Date.now() + timeoutMs;
+  while (state.status === "RUNNING" || state.status === "PENDING") {
+    if (Date.now() > deadline) throw new ApiError(504, "편성 계산이 제한 시간 안에 끝나지 않았습니다.");
+    await new Promise((r) => setTimeout(r, intervalMs));
+    state = await getPlan(missionId);
+    onProgress?.(state);
+  }
+  if (state.status !== "COMPLETED") throw new ApiError(500, state.error || "편성 계산에 실패했습니다.");
+  return state;
+}
+
+// 3) 계산된 편성으로 3개 모드의 시뮬레이션을 동시에 시작한다
+export async function startRuns(missionId) {
   const runs = [];
   for (const [, serverMode] of MODES) {
-    runs.push(await request(`/api/missions/${mission.id}/runs?mode=${serverMode}`, { method: "POST" }));
+    runs.push(await request(`/api/missions/${missionId}/runs?mode=${serverMode}`, { method: "POST" }));
   }
   await Promise.all(runs.map((r) => request(`/api/runs/${r.id}/start`, { method: "POST" })));
-  return mission.id;
+  return missionId;
 }
 
 export const latestRunSet = () => request("/api/runs/latest-set");
@@ -102,6 +124,7 @@ export async function fetchServerReplay() {
   const replays = await Promise.all(set.runs.map((r) => request(`/api/runs/${r.id}/replay`)));
   const scenario = {
     ...replays[0].scenario,
+    mission_id: set.mission_id,
     case: "서버 실행 · 그단스크 · 최적화 모드",
     turns: Math.max(...replays.map((r) => r.scenario.turns)),
     modes: replays.map((r) => r.scenario.modes[0]),

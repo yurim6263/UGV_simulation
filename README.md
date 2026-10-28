@@ -11,7 +11,8 @@
 | 영역 | 내용 |
 |---|---|
 | **시뮬레이션 엔진** | 이동 시간을 행동력(AP)으로 계산하는 시간 의존 최단경로, 3제대(유인기·운용자·UGV) 운용, 고장(SOS)과 운용자 개입 |
-| **최적화** | NSGA-II 다목적 최적화(수색 면적·작전 시간·운용자 과부하) + 새 시드 몬테카를로 검증(평균 ± 95% 신뢰구간) |
+| **편성 계산** | 목표 위치에서 제대별 UGV 투입 대수(1~3대, 보유 9대)를 시뮬레이션으로 계산: 27가지 후보를 제대별 단독 시험의 합성으로 평가(직접 시뮬레이션과 대조 검증), 모드별 우선순위로 선택 |
+| **최적화** | NSGA-II 다목적 최적화(수색 면적·작전 시간·운용자 과부하) + 새 시드 몬테카를로 검증(평균 ± 95% 신뢰구간). 모드의 전술 성향의 근거 |
 | **데이터 분석** | ERA5 강수 예측(XGBoost vs 지속성), 저장소 예보의 리드타임별 오차, 실행 기록 SQL 분석 |
 | **AI 어시스턴트** | Gemini 도구 호출, 역할별 권한을 코드로 강제, 답변 숫자·인용 검증, 자연어 임무 입력, 상황 보고 자동 작성, 운용 규칙 검색(RAG), 평가 하네스 |
 | **서비스** | FastAPI + SQLAlchemy(PostgreSQL/SQLite) + JWT 역할 기반 접근, React 재생 대시보드 |
@@ -36,6 +37,7 @@
 
 ![AI 상황 보고](docs/img/ai.png)
 
+- **편성 탭**(지휘관): 모드별 추천 편성(예: 2-3-2)과 후보 27가지의 도착률·수색·작전 시간·운용자 부하를 표로 비교합니다. 목표를 바꿔 다시 실행하면 편성도 다시 계산됩니다(직접 입력한 목표는 약 1분, 기본 목표는 저장된 결과).
 - **목표 입력**: 지도에서 정찰 목표 3곳의 좌표와 정찰 시간을 입력하고(**목표 1은 1제대, 목표 2는 2제대, 목표 3은 3제대가 맡습니다**)(또는 "1제대는 그디니아, 2제대는 공항 근처"처럼 **문장으로 입력하면 AI가 입력칸을 채워 줍니다.** 확정은 사람이 합니다) "시뮬레이션 실행"을 누르면, 서버가 균형·정밀·신속 3개 모드를 같은 조건으로 실행합니다(약 40초).
 - **AI 어시스턴트 탭**: 질문에 도구로 조회한 근거 `[E1]`을 붙여 답하고("AP는 어떻게 계산해?" 같은 규칙 질문은 **운용 규칙 문서를 검색해 출처와 함께** 답하며, 문서에 없으면 "없다"고 합니다), 버튼 하나로 **양식을 갖춘 상황 보고 초안**을 만듭니다. 통제관은 담당 제대 범위로만 만들어집니다.
 - **예보 탭**: 현재 시각에 이미 발표되어 있던 예보로 "현재 + 1·2·3시간 뒤" 위험도를 같은 지도 스타일로 보여주고, **같은 시각의 예보와 실제(실황)의 등급 비율을 나란히 비교**합니다(예보가 실제보다 위험을 훨씬 낮게 본다는 것이 한눈에 보입니다). 예전 HTML 지도는 제거했습니다.
@@ -76,6 +78,7 @@
 | `POST /api/missions`, `POST /api/missions/{id}/targets` | 임무와 목표 생성 | 로그인 |
 | `POST /api/missions/{id}/runs?mode=balanced\|recon\|rapid` | 모드별 실행 생성 | 로그인 |
 | `POST /api/runs/{id}/start` | 시뮬레이션 실행 | 로그인 |
+| `POST /api/missions/{id}/plan`, `GET /api/missions/{id}/plan` | 편성 계산 시작 / 진행률과 결과 | 지휘관 |
 | `GET /api/runs/{id}/replay` | 재생 데이터 (통제관은 담당 제대만) | 로그인 |
 | `GET /api/runs/{id}/analysis` | 실행 기록 SQL 분석 | 지휘관 |
 | `GET /api/map/overlay/{kind}/{turn}.png` | 위험도 오버레이 이미지 | 공개 |
@@ -168,10 +171,11 @@ npm.cmd run dev
 | NSGA-II 최적화 + 검증 | `python backend/scripts/run_nsga2.py --pop 20 --gens 10 --val-seeds 10 --workers 6 --out backend/data/optimization/pareto.json` (약 40~70분, 작업자당 메모리 약 180MB) |
 | 최적화 보고서 | `python backend/scripts/make_report.py` |
 | 강수 예측 학습 / 예보 오차 보고서 | `python backend/scripts/train_rain_model.py --era5-dir "<ERA5_land>"` → `python backend/scripts/make_weather_report.py` |
-| AI 어시스턴트 평가 | `python backend/scripts/eval_assistant.py` |
+| AI 어시스턴트 평가 | `python backend/scripts/eval_assistant.py` (편성 계산까지 하므로 1분쯤 더 걸림) |
 
 - 분석 스크립트에는 추가 패키지가 필요합니다: `pip install -r backend/requirements-analysis.txt`(서버 이미지에는 들어가지 않습니다).
-- `backend/data/optimization/pareto.json`이 있으면 서버가 이 결과의 신속/정밀/균형 원형을 모드 설정으로 씁니다. `SIM_PRESETS=reference`로 팀원 기준 프리셋을 강제할 수 있습니다.
+- `backend/data/optimization/pareto.json`이 있으면 서버가 이 결과의 신속/정밀/균형 원형의 **전술 성향(유전자)**을 모드 설정으로 씁니다. `SIM_PRESETS=reference`로 팀원 기준 프리셋을 강제할 수 있습니다. **제대별 UGV 수(편성)는 모드에 고정되어 있지 않고** 편성 계산기가 목표 위치에서 계산합니다.
+- `python backend/scripts/precompute_formation.py`는 기본 목표의 편성 계산을 미리 해 둡니다(`backend/data/formation/default_plan.json`). 엔진이나 모드 전술이 바뀌면 다시 실행하세요.
 - 시뮬레이션 환경변수: `SIM_WEATHER_SCALE`(clear / moderate / severe 또는 0~1, 기본 moderate), `SIM_TICK_SLEEP`(턴 사이 대기 초).
 - 대시보드의 "데이터 출처"는 **서버 실행**(요청 때마다 계산), **팀원 기록**과 **엔진 실행**(미리 저장해 둔 사본)입니다. 저장본은 스크립트를 다시 돌려야 갱신됩니다.
 
@@ -210,6 +214,7 @@ five_weathers/
 | `BACKEND_CORS_ORIGINS` | 허용할 프론트 주소 (쉼표 구분) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | AI 어시스턴트 (선택) |
 | `ASSISTANT_RATE_LIMIT` | AI 질문 횟수 제한 (기본 `20/minute`) |
+| `PLAN_WORKERS` | 편성 계산의 병렬 작업자 수 (기본 4, 작업자당 메모리 약 180MB) |
 | `ASSET_BASE_PATH` | 지도·시뮬레이션 데이터 경로 (기본 `./data`) |
 
 프론트: `VITE_API_URL`(기본 `http://127.0.0.1:8001`).
@@ -223,10 +228,11 @@ pip install -r requirements.txt
 pytest
 ```
 
-228개 테스트가 PostgreSQL이나 `.env` 없이 in-memory SQLite로 돌아갑니다(전체 약 8분). AI 어시스턴트 테스트는 실제 Gemini 대신 가짜 모델을 끼워 권한, 근거 검증, 에이전트 루프, 어댑터 변환을 검증합니다.
+250개 이상의 테스트가 PostgreSQL이나 `.env` 없이 in-memory SQLite로 돌아갑니다(전체 약 8분). AI 어시스턴트 테스트는 실제 Gemini 대신 가짜 모델을 끼워 권한, 근거 검증, 에이전트 루프, 어댑터 변환을 검증합니다.
 
 ## 한계
 
+- **편성 계산은 시뮬레이션 추정**(시드 4개의 평균)이라 작은 차이는 우연일 수 있고, 제대당 1~3대만 탐색합니다. 모드의 전술 성향은 목표에 따라 바뀌지 않습니다.
 - **시나리오는 하나**입니다. 한 번의 날씨 사례를 강도(`weather_scale`)만 바꿔 쓰며, 사고 확률 등 일부 파라미터는 가정값입니다. 실제 UGV 관제나 운영 시스템이 아닙니다.
 - 최적화의 대부분 비교는 통계적으로 구분되지 않습니다(위 핵심 결과 참고). 시뮬레이션 1회 기록과 평균 통계를 화면과 AI 답변에서 구분해 표시합니다.
 - 위험 등급 기준값은 상대 순위라 날씨 강도와 무관합니다. 이 데이터는 전 구간이 악조건이라 시작 시각 지도가 붉게 나옵니다.
@@ -235,7 +241,7 @@ pytest
 
 ## 문서
 
-- [데이터 계약과 엔진 동작](docs/data_contract.md) · [최적화 보고서](docs/optimization_report.md) · [기상 모델 보고서](docs/weather_model_report.md) · [SQL 분석](docs/sql_analysis.md) · [AI 어시스턴트](docs/assistant.md)
+- [데이터 계약과 엔진 동작](docs/data_contract.md) · [편성 계산기](docs/formation_planner.md) · [최적화 보고서](docs/optimization_report.md) · [기상 모델 보고서](docs/weather_model_report.md) · [SQL 분석](docs/sql_analysis.md) · [AI 어시스턴트](docs/assistant.md)
 
 ## License
 

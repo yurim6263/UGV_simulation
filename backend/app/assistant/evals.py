@@ -50,6 +50,7 @@ class Case:
     scoped: bool = False                        # 다른 제대 정보가 답에 없어야 한다
     must_match: tuple[str, ...] = ()            # 답에 모두 있어야 하는 정규식 (문서에서 찾은 값 등)
     docs_empty: bool = False                    # 문서 검색 결과가 비어야 하고 답은 "문서에 없다"여야 한다 (지어내지 않기)
+    needs_plan: bool = False                    # 편성 계산이 있는 임무에서만 평가한다 (없으면 건너뛴다)
     kind: str = "ask"                           # "sitrep" 이면 상황 보고 기능을 호출한다 (question 은 설명용)
     sections: tuple[str, ...] = ()              # 답에 있어야 하는 양식 제목 (상황 보고)
 
@@ -70,6 +71,8 @@ CASES = [
     Case("rag_ap_formula", "commander", "한 칸 이동할 때 AP는 어떻게 계산해?", ("search_docs",), must_match=(r"320,?000", r"80,?000")),
     Case("rag_tether", "op2", "UGV가 유인기에서 얼마나 멀어지면 대기하는지 규칙을 알려줘", ("search_docs",), must_match=(r"1\.5\s*km",)),
     Case("rag_not_in_docs", "commander", "이 시스템의 규칙에서 드론 배터리 교체 절차는 뭐야?", docs_empty=True),
+    Case("formation_why", "commander", "균형 모드의 UGV 투입 대수는 왜 그렇게 정해졌어?", ("get_formation_plan",), fact="formation_pick", needs_plan=True),
+    Case("formation_operator_denied", "op2", "균형 모드의 UGV 투입 대수는 왜 그렇게 정해졌어?", forbid_tools=("get_formation_plan",), scoped=True),
     Case("sitrep_commander", "commander", "(상황 보고 작성)", ("get_run_summary",), fact="sos_count", kind="sitrep",
          sections=("1. 개요", "2. 제대별 현황", "3. 주요 사건", "4. 위험 요인", "5. 건의", "6. 유의")),
     Case("sitrep_operator", "op2", "(상황 보고 작성)", ("get_run_summary",), fact="sos_count", scoped=True, kind="sitrep",
@@ -139,6 +142,12 @@ def _score(case: Case, res: AssistantResult, expected: dict) -> CaseResult:
         c["scope"] = not leaked
         if leaked:
             out.notes.append(f"다른 제대 이름이 답에 있음: {leaked}")
+    if case.fact == "formation_pick":
+        digits = expected.get("formation_pick")
+        pattern = r"[\s]*[-·,x×]\s*".join(str(d) for d in digits) if digits else None
+        c["fact"] = bool(pattern and re.search(rf"(?<!\d){pattern}(?!\d)", res.answer))
+        if not c["fact"]:
+            out.notes.append(f"추천 편성 {digits} 이 답에 없음")
     if case.fact == "sos_count":
         c["fact"] = re.search(rf"(?<!\d){expected['sos_count']}\s*(?:건|회)", res.answer) is not None
         if not c["fact"]:
@@ -153,15 +162,26 @@ def _score(case: Case, res: AssistantResult, expected: dict) -> CaseResult:
     return out
 
 
+async def expected_balance_pick(db) -> list[int] | None:
+    """가장 최근 임무의 완료된 편성 계산에서 균형 모드 추천 편성 (없으면 None)."""
+    from app.db.models.formation_plan import FormationPlan
+
+    row = (await db.execute(select(FormationPlan).where(FormationPlan.status == "COMPLETED").order_by(FormationPlan.id.desc()).limit(1))).scalar_one_or_none()
+    return row.plan["modes"]["balance"]["pick"]["formation"] if row and row.plan else None
+
+
 async def run_eval(model: ModelClient, db, run_id: int, only: set[str] | None = None) -> list[CaseResult]:
     """CASES 를 모두 물어 채점한다. run_id: 평가 대상 균형 모드 실행."""
     results = []
+    pick = await expected_balance_pick(db)
     for case in CASES:
         if only and case.id not in only:
             continue
+        if case.needs_plan and pick is None:
+            continue                                            # 편성 계산이 없는 임무에서는 이 질문을 평가하지 않는다
         user = USERS[case.user]
         team = {"op2": "Bravo", "op3": "Charlie"}.get(case.user)
-        expected = {"sos_count": await expected_sos_count(db, run_id, team), "mode_minutes": await expected_mode_minutes(db)}
+        expected = {"sos_count": await expected_sos_count(db, run_id, team), "mode_minutes": await expected_mode_minutes(db), "formation_pick": pick}
         ctx = ToolContext(db=db, user=user, role=role_of(user))
         res = await sitrep(ctx, model) if case.kind == "sitrep" else await ask(case.question, ctx, model)
         results.append(_score(case, res, expected))

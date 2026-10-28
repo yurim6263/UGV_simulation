@@ -206,6 +206,44 @@ async def get_forecast_quality(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+MODE_KEYS = (("balance", "균형"), ("explore", "정밀"), ("rush", "신속"))
+
+
+def _plan_metrics(c: dict) -> dict:
+    """편성 후보 1개를 모델이 읽기 쉬운 단위(%, 분)로 바꾼다."""
+    return {"formation": c["formation"], "ugv_total": c["total"], "arrival_pct": round(c["arrival"] * 100, 1),
+            "coverage_pct": round(c["v1"] * 100, 1), "mission_minutes": c["v2"], "operator_overload_minutes": c["v3"],
+            "sos_mean": c["sos"]}
+
+
+async def get_formation_plan(ctx: ToolContext, args: dict) -> dict:
+    from app.services.plan_service import latest_plan
+
+    mission_id = (await _latest_runs(ctx))[0].mission_id
+    row = await latest_plan(ctx.db, mission_id)
+    if row is None or row.status != "COMPLETED" or not row.plan:
+        raise ToolError("이 임무에는 완료된 편성 계산이 없습니다 (보유 UGV를 제대에 고르게 나눠 실행했을 수 있음).")
+    plan = row.plan
+    modes = {}
+    for key, label in MODE_KEYS:
+        data = plan["modes"][key]
+        pick = data["pick"]
+        chosen = next(c for c in data["candidates"] if c["formation"] == pick["formation"])
+        best = sorted((c for c in data["candidates"] if c["pareto"]), key=lambda c: -c["v1"])[:6]
+        modes[key] = {"label": label, "pick": {"formation": pick["formation"], "ugv_total": pick["total"], "reason": pick["reason"],
+                                               "arrival_constraint_met": pick["constraint_met"]},
+                      "pick_metrics": _plan_metrics(chosen), "not_dominated_candidates": [_plan_metrics(c) for c in best],
+                      "candidates_total": len(data["candidates"])}
+    return {
+        "mission_id": mission_id, "reused_saved_result": row.cached, "seeds": len(plan["seeds"]), "episodes": plan["episodes"],
+        "fleet_ugv": 9, "per_team_range": plan["range"], "min_arrival_pct": round(plan["min_arrival"] * 100),
+        "modes": modes,
+        "caveat": ("시뮬레이션 추정(시드 몇 개의 평균)이라 수색 1%p, 작전 시간 5분 안팎의 차이는 우연일 수 있다. "
+                   "편성은 제대당 1~3대만 탐색했고, 제대-목표 배정(입력 순서)과 모드의 전술 성향은 탐색하지 않았다. "
+                   "개별 실행의 결과(get_run_summary)는 이 평균과 다를 수 있다."),
+    }
+
+
 DOC_TEXT_LIMIT = 650
 
 
@@ -251,6 +289,9 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("get_optimization_results", "NSGA-II 최적화 결과: 신속/정밀/균형 전술의 편성과 몬테카를로 검증 성능(평균 ± 95% 신뢰구간)을 기준 전술과 비교. "
              "통계적으로 말할 수 있는 것과 없는 것을 구분하려면 반드시 이 도구의 신뢰구간을 쓴다.",
              {"type": "object", "properties": {}}, BOTH, get_optimization_results),
+    ToolSpec("get_formation_plan", "제대별 UGV 투입 대수(편성)가 왜 그렇게 정해졌는지: 모드별 추천 편성과 이유, 후보 편성의 도착률·수색·작전 시간·과부하. "
+             "제대를 가로지르는 비교라 지휘관 전용.",
+             {"type": "object", "properties": {}}, ("commander",), get_formation_plan),
     ToolSpec("search_docs", "시스템 운용 규칙과 분석 문서를 검색한다 (AP 계산식, 사고 확률, 운용자 개입 비용, 목줄 거리, 위험 등급의 뜻, 최적화 방법 등 "
              "'규칙·정의·공식·방법'에 관한 질문). 실행 기록의 숫자는 이 도구가 아니라 run 도구들로 조회한다.",
              {"type": "object", "properties": {"query": {"type": "string", "description": "찾을 내용 (한국어 키워드, 예: 'AP 계산식', '유인기 대기 거리')"},

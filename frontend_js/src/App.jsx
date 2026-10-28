@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
-import { API_URL, assistantStatus, clearToken, draftMission, launchMission, latestRunSet, login as apiLogin, waitForRuns } from "./api";
+import { API_URL, assistantStatus, clearToken, createMission, draftMission, latestRunSet, login as apiLogin, planFormation, startRuns, waitForRuns } from "./api";
 import { initialTargets, units } from "./data";
 import { useReplay } from "./replay/useReplay";
 import BaseMap from "./replay/BaseMap";
@@ -9,11 +9,12 @@ import ReplayMap from "./replay/ReplayMap";
 import ReplayControls from "./replay/ReplayControls";
 import TeamTimeline from "./replay/TeamTimeline";
 import AssistantPanel from "./replay/AssistantPanel";
+import FormationPanel from "./replay/FormationPanel";
 import ForecastPanel from "./replay/ForecastPanel";
 import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
-import { GRADE_COLOR, REPLAY_SOURCES, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, scopedKpi, teamRedRatio } from "./replay/replayModel";
+import { FLEET_UGV, GRADE_COLOR, REPLAY_SOURCES, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, formationText, scopedKpi, teamRedRatio } from "./replay/replayModel";
 
 const MAP_BOUNDS = [[54.2977, 18.2640], [54.5209, 18.6479]];
 const TEAM_ORDER = ["Alpha", "Bravo", "Charlie"];
@@ -246,7 +247,7 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
               ))}
             </div>
           </section>
-          <p className="hint nomargin">실행하면 균형·정밀·신속 3가지 모드를 같은 조건으로 한 번씩 시뮬레이션합니다. 목표는 작전 구역(그단스크 인근) 안이어야 합니다.</p>
+          <p className="hint nomargin">실행하면 먼저 목표 위치에 맞게 제대별 UGV 투입 대수(1~3대, 보유 9대)를 계산한 뒤, 균형·정밀·신속 3가지 모드를 시뮬레이션합니다. 목표는 작전 구역(그단스크 인근) 안이어야 합니다.</p>
           <button className="btn primary block big" onClick={onSubmit}>시뮬레이션 실행</button>
         </aside>
       </div>
@@ -254,10 +255,12 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
   );
 }
 
-// 지휘관이 입력한 목표로 임무를 만들고 3개 모드의 시뮬레이션을 서버에서 실행한다 (실제 진행을 보여준다)
+// 지휘관이 입력한 목표로 임무를 만들고, 목표 위치에 맞게 제대별 UGV 수(1~3대)를 계산한 뒤, 3개 모드의 시뮬레이션을 서버에서 실행한다
 function LaunchPage({ targets, onDone, onBack }) {
-  const [status, setStatus] = useState("임무를 만드는 중…");
-  const [pct, setPct] = useState(0);
+  const [step, setStep] = useState(0);                 // 0 임무 생성, 1 편성 계산, 2 모드 실행
+  const [plan, setPlan] = useState(null);              // 편성 계산 진행 상태
+  const [runPct, setRunPct] = useState(0);
+  const [modesDone, setModesDone] = useState(0);
   const [error, setError] = useState("");
   // 개발 모드(StrictMode)는 효과를 한 번 정리했다가 다시 실행한다. 임무가 두 번 만들어지지 않도록 시작은 한 번만 하고,
   // "화면이 아직 있는가"는 시작 여부와 따로 추적한다 (둘을 섞으면 정리 때 꺼진 값이 되살아나지 않아 진행 표시가 멈춘다).
@@ -279,13 +282,17 @@ function LaunchPage({ targets, onDone, onBack }) {
         if (parsed.some((t) => !Number.isFinite(t.lat) || !Number.isFinite(t.lon) || t.lat === 0 || t.lon === 0)) {
           throw new Error("세 목표의 위도와 경도를 모두 숫자로 입력하세요.");
         }
-        await launchMission({ targets: parsed });
+        const missionId = await createMission({ targets: parsed });
+        if (!mounted.current) return;
+        setStep(1);
+        await planFormation(missionId, (s) => { if (mounted.current) setPlan(s); });
+        if (!mounted.current) return;
+        setStep(2);
+        await startRuns(missionId);
         const set = await waitForRuns((s) => {
           if (!mounted.current) return;
-          const done = s.runs.filter((r) => r.status === "COMPLETED").length;
-          const avg = Math.round(s.runs.reduce((n, r) => n + r.progress_pct, 0) / Math.max(1, s.runs.length));
-          setStatus(`시뮬레이션 실행 중 · 모드 ${done}/${s.runs.length} 완료`);
-          setPct(avg);
+          setModesDone(s.runs.filter((r) => r.status === "COMPLETED").length);
+          setRunPct(Math.round(s.runs.reduce((n, r) => n + r.progress_pct, 0) / Math.max(1, s.runs.length)));
         });
         if (mounted.current) onDone(set);
       } catch (e) {
@@ -295,6 +302,14 @@ function LaunchPage({ targets, onDone, onBack }) {
     // 의도적으로 한 번만 실행한다 (targets/onDone 이 바뀌어도 임무를 다시 만들지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const planPct = plan && plan.total ? Math.round((plan.done / plan.total) * 100) : 0;
+  const steps = [
+    ["임무 만들기", step > 0 ? "완료" : "진행 중"],
+    ["편성 계산", step > 1 ? (plan?.cached ? "저장된 결과 사용" : "완료") : step === 1 ? (plan?.cached ? "저장된 결과 사용" : `${planPct}% (${plan?.done ?? 0}/${plan?.total ?? "?"})`) : "대기"],
+    ["모드별 시뮬레이션", step === 2 ? `${modesDone}/3 모드 완료 · ${runPct}%` : "대기"],
+  ];
+  const pct = step === 0 ? 3 : step === 1 ? 5 + planPct * 0.55 : 60 + runPct * 0.4;
 
   return (
     <main className="center-page">
@@ -307,9 +322,14 @@ function LaunchPage({ targets, onDone, onBack }) {
       ) : (
         <div className="launch">
           <Logo size={40} />
-          <h1>{status}</h1>
-          <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.max(4, pct)}%` }} /></div>
-          <p className="hint">진행 {pct}% · 균형·정밀·신속 3가지 모드를 계산합니다.</p>
+          <h1>{step === 1 ? "목표 위치에 맞는 편성을 계산하는 중" : step === 2 ? "모드별 시뮬레이션 실행 중" : "임무를 만드는 중"}</h1>
+          <div className="progress" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.max(4, pct)}%` }} /></div>
+          <ol className="steps">
+            {steps.map(([name, state], i) => (
+              <li key={name} className={i < step ? "done" : i === step ? "now" : ""}><span>{name}</span><em>{state}</em></li>
+            ))}
+          </ol>
+          <p className="hint">제대마다 UGV를 1~3대 투입하는 모든 조합을 시험해서 균형·정밀·신속 모드의 편성을 정합니다. 직접 입력한 목표는 1분 정도, 기본 목표는 저장된 결과를 써서 더 빨리 끝납니다.</p>
         </div>
       )}
     </main>
@@ -359,7 +379,7 @@ function MainDashboard({ account, onLogout }) {
     () => (models ? Object.fromEntries(Object.entries(models).map(([k, m]) => [k, scopedKpi(m, myTeam)])) : {}),
     [models, myTeam],
   );
-  const tabs = [["events", "이벤트"], ["units", "UGV"], ["pareto", "최적화"], ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
+  const tabs = [["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"]]), ["pareto", "최적화"], ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
 
   return (
     <main className="app">
@@ -387,6 +407,7 @@ function MainDashboard({ account, onLogout }) {
                 <button key={m.key} className={`mode ${replay.mode === m.key ? "on" : ""}`} onClick={() => replay.setMode(m.key)} disabled={!model}>
                   <span className="n">{m.label}{replay.mode === m.key && <small>선택됨</small>}</span>
                   <span className="d">{m.desc}</span>
+                  {models?.[m.key] && <span className="mode-form" title="제대별 UGV 투입 대수 (목표 위치에 맞게 계산)">편성 <b className="num">{formationText(models[m.key], myTeam)}</b></span>}
                   {k && <span className="m"><span>도착 <b className="num">{k.arrived}/{k.total}</b></span><span>SOS <b className="num">{k.sos}</b></span></span>}
                 </button>
               );
@@ -449,7 +470,7 @@ function MainDashboard({ account, onLogout }) {
         </div>
 
         <aside className="right">
-          {model ? <KpiSummary replay={replay} team={myTeam} compact={tab === "ai"} /> : <section className="kpis"><p className="kpis-basis">임무 요약</p></section>}
+          {model ? <KpiSummary replay={replay} team={myTeam} compact={tab === "ai" || tab === "formation"} /> : <section className="kpis"><p className="kpis-basis">임무 요약</p></section>}
           <div className="tabs" role="tablist">
             {tabs.map(([key, label]) => (
               <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>
@@ -458,6 +479,7 @@ function MainDashboard({ account, onLogout }) {
           <div className="panel">
             {model && tab === "events" && <EventList replay={replay} allowedTeams={allowedTeams} />}
             {model && tab === "units" && <AgentTable replay={replay} allowedTeams={allowedTeams} />}
+            {tab === "formation" && model && <FormationPanel replay={replay} />}
             {tab === "pareto" && <ParetoPanel onPickMode={replay.setMode} />}
             {tab === "forecast" && model && <ForecastPanel replay={replay} allowedTeams={allowedTeams} />}
             {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode} />}

@@ -9,6 +9,9 @@ export const REPLAY_SOURCES = {
 };
 export const replayBase = (source) => (REPLAY_SOURCES[source].dir ? `${import.meta.env.BASE_URL}${REPLAY_SOURCES[source].dir}` : null);
 
+// 보유 UGV 수 (임무 생성 때 정한 값, launchMission 의 기본값과 같다). 제대마다 1~3대를 투입한다.
+export const FLEET_UGV = 9;
+
 export const TEAM_UNIT = { Alpha: "1제대", Bravo: "2제대", Charlie: "3제대" };
 export const USER_TEAM = { user1: "Alpha", user2: "Bravo", user3: "Charlie" };
 // 색의 주인공은 위험 등급(G/A/R)이다. 제대 색은 위험 색과 겹치지 않게 파랑·보라·분홍으로 둔다.
@@ -190,4 +193,12 @@ export function teamTimeline(model, team) {
   const events = model.events.filter((e) => e.team === team && e.turn < turns)
     .map((e) => ({ type: e.type, turn: e.turn, frame: e.frame, text: e.text }));
   return { cells, events, turns };
+}
+
+// 모드 카드에 보여 줄 편성 글자: 지휘관은 "3-3-1 (7/9대)", 통제관은 자기 제대 "UGV 3대"
+export function formationText(model, team) {
+  const per = model.kpi.per_team;
+  if (team) return per[team] ? `UGV ${per[team].ugv}대` : "-";
+  const counts = Object.keys(TEAM_UNIT).filter((t) => per[t]).map((t) => per[t].ugv);
+  return `${counts.join("-")} (${counts.reduce((a, b) => a + b, 0)}/${FLEET_UGV}대)`;
 }

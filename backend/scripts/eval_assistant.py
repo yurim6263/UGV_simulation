@@ -57,6 +57,12 @@ async def build_runs() -> int:
         c.headers["Authorization"] = f"Bearer {tok}"
         mid = (await c.post("/api/missions", json=MISSION)).json()["id"]
         await c.post(f"/api/missions/{mid}/targets", json=TARGETS)
+        await c.post(f"/api/missions/{mid}/plan")                      # 편성 계산 (질문 "편성은 왜 그렇게 정해졌어?" 평가에 필요, 약 30~60초)
+        for _ in range(600):
+            state = (await c.get(f"/api/missions/{mid}/plan")).json()
+            if state["status"] in ("COMPLETED", "FAILED"):
+                break
+            await asyncio.sleep(1)
         balanced = None
         for mode in ("balanced", "recon", "rapid"):
             rid = (await c.post(f"/api/missions/{mid}/runs?mode={mode}")).json()["id"]

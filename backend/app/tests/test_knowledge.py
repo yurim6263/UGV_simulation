@@ -32,6 +32,18 @@ def has(text: str) -> bool:
     return text in RULES
 
 
+# ── 편성 계산 규칙 ──────────────────────────────────────────────────────────
+
+def test_rules_document_describes_the_formation_planner_with_the_real_constants():
+    from app.simulation import formation
+
+    assert has(f"제대마다 {formation.MIN_PER_TEAM}~{formation.MAX_PER_TEAM}대")
+    assert has(f"도착률 {int(formation.MIN_ARRIVAL * 100)}% 이상")
+    assert has(f"수색 {int(formation.TIE_COVERAGE * 100)}%p") and has(f"시간 {formation.TIE_MINUTES}분")
+    assert "모드마다 제대별 UGV 수" not in RULES                      # 모드에 고정된 편성이 있다는 옛 설명이 남아 있지 않다
+    assert "3-3-3" not in RULES and "4-3-2" not in RULES
+
+
 # ── 문서 ↔ 코드 ──────────────────────────────────────────────────────────
 
 def test_rules_document_numbers_match_engine_constants():

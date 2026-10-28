@@ -101,6 +101,48 @@ async def test_plan_is_ignored_when_the_mission_inputs_changed_after_planning(au
     assert await plan_service.chosen_formation(mission, "balance", 0.15) is None
 
 
+# ── AI 도구: 편성이 왜 그렇게 정해졌는지 ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_formation_tool_reports_picks_reasons_and_not_dominated_candidates(auth_client: AsyncClient):
+    from app.assistant.schema import ToolCall, ToolContext
+    from app.assistant.tools import execute_tool
+    from app.core.security import TokenPayload
+
+    mid = await new_mission(auth_client)
+    plan = (await finish_plan(auth_client, mid))["plan"]
+    run_id = (await auth_client.post(f"/api/missions/{mid}/runs")).json()["id"]          # 가장 최근 임무를 만든다
+    assert run_id
+    async with AsyncSessionLocal() as db:
+        ctx = ToolContext(db=db, user=TokenPayload(sub="1", role="commander"), role="commander")
+        e = await execute_tool(ctx, ToolCall("get_formation_plan", {}), "E1")
+    assert not e.error, e.result
+    r = e.result
+    assert r["mission_id"] == mid and r["seeds"] == 1 and r["fleet_ugv"] == 9 and r["min_arrival_pct"] == 80 and "시뮬레이션 추정" in r["caveat"]
+    for key, label in (("balance", "균형"), ("explore", "정밀"), ("rush", "신속")):
+        m = r["modes"][key]
+        assert m["label"] == label and m["pick"]["formation"] == plan["modes"][key]["pick"]["formation"]
+        assert m["pick_metrics"]["formation"] == m["pick"]["formation"] and 0 <= m["pick_metrics"]["arrival_pct"] <= 100
+        assert m["not_dominated_candidates"] and m["candidates_total"] == 3
+
+
+@pytest.mark.asyncio
+async def test_formation_tool_is_commander_only_and_reports_a_missing_plan(auth_client: AsyncClient):
+    from app.assistant.schema import ToolCall, ToolContext
+    from app.assistant.tools import execute_tool, visible_tools
+    from app.core.security import TokenPayload
+
+    assert "get_formation_plan" in {t.name for t in visible_tools("commander")}
+    assert "get_formation_plan" not in {t.name for t in visible_tools("operator")}
+    mid = await new_mission(auth_client)
+    await auth_client.post(f"/api/missions/{mid}/runs")                                # 계산 없이 만든 임무
+    async with AsyncSessionLocal() as db:
+        none = await execute_tool(ToolContext(db=db, user=TokenPayload(sub="1", role="commander"), role="commander"), ToolCall("get_formation_plan", {}), "E1")
+        denied = await execute_tool(ToolContext(db=db, user=TokenPayload(sub="2", role="operator", unit="1제대"), role="operator"), ToolCall("get_formation_plan", {}), "E2")
+    assert none.error and "편성 계산이 없습니다" in none.result["error"]
+    assert denied.denied
+
+
 @pytest.mark.asyncio
 async def test_plan_endpoints_are_commander_only_and_validate_the_mission(operator_client: AsyncClient, auth_client: AsyncClient):
     assert (await operator_client.post("/api/missions/1/plan")).status_code == 403
