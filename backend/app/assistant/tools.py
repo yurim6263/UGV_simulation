@@ -25,7 +25,7 @@ from app.analysis.sql_reports import QUERIES, mode_comparison, run_report
 from app.assistant.knowledge import default_index
 from app.assistant.schema import Evidence, ToolCall, ToolContext, ToolError, ToolSpec
 from app.db.models.simulation_run import SimulationRun
-from app.services.run_data import COMMANDER_ROLES, MODE_OF, RunDataError, build_run_mode, load_run_data
+from app.services.run_data import COMMANDER_ROLES, MODE_OF, RunDataError, assigned_server_mode, build_run_mode, load_run_data
 from app.simulation.presets import PARETO_PATH
 
 ROOT_DATA = Path(__file__).resolve().parents[2] / "data"
@@ -87,7 +87,14 @@ async def _resolve_run_id(ctx: ToolContext, args: dict) -> int:
     """run_id 가 있으면 그것을, 없으면 가장 최근 임무에서 mode(기본 균형)의 run 을 쓴다."""
     run_id = _opt_int(args, "run_id")
     if run_id is not None:
-        return run_id
+        return run_id                                # 통제관이 다른 모드의 run 을 지정해도 load_run_data 가 거부한다
+    if not args.get("mode"):
+        try:
+            assigned = await assigned_server_mode(ctx.db, ctx.user)       # 통제관의 기본은 담당 제대에 지정된 모드
+        except RunDataError as exc:
+            raise _run_error(exc) from exc
+        if assigned:
+            args = {**args, "mode": assigned}
     mode = _mode(args)
     for run in await _latest_runs(ctx):
         if (run.selected_mode or "balanced") == mode:
@@ -103,6 +110,12 @@ def _run_error(exc: RunDataError) -> ToolError:
 
 async def list_runs(ctx: ToolContext, args: dict) -> dict:
     runs = await _latest_runs(ctx)
+    try:
+        assigned = await assigned_server_mode(ctx.db, ctx.user)
+    except RunDataError as exc:
+        raise _run_error(exc) from exc
+    if assigned:                                     # 통제관에게는 지정된 모드의 실행만 보여 준다
+        runs = [r for r in runs if (r.selected_mode or "balanced") == assigned]
     return {"mission_id": runs[0].mission_id,
             "runs": [{"run_id": r.id, "mode": r.selected_mode or "balanced", "mode_label": MODE_LABEL[r.selected_mode or "balanced"],
                       "status": r.status} for r in runs]}
@@ -287,8 +300,8 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("compare_modes", "가장 최근 임무의 균형/정밀/신속 실행을 SOS, 개입, 작전 시간, 고위험 비율로 비교한다. 지휘관 전용. 1회 실행 비교다.",
              {"type": "object", "properties": {}}, ("commander",), compare_modes),
     ToolSpec("get_optimization_results", "NSGA-II 최적화 결과: 신속/정밀/균형 전술의 편성과 몬테카를로 검증 성능(평균 ± 95% 신뢰구간)을 기준 전술과 비교. "
-             "통계적으로 말할 수 있는 것과 없는 것을 구분하려면 반드시 이 도구의 신뢰구간을 쓴다.",
-             {"type": "object", "properties": {}}, BOTH, get_optimization_results),
+             "모드를 가로지르는 비교라 지휘관 전용. 통계적으로 말할 수 있는 것과 없는 것을 구분하려면 반드시 이 도구의 신뢰구간을 쓴다.",
+             {"type": "object", "properties": {}}, ("commander",), get_optimization_results),
     ToolSpec("get_formation_plan", "제대별 UGV 투입 대수(편성)가 왜 그렇게 정해졌는지: 모드별 추천 편성과 이유, 후보 편성의 도착률·수색·작전 시간·과부하. "
              "제대를 가로지르는 비교라 지휘관 전용.",
              {"type": "object", "properties": {}}, ("commander",), get_formation_plan),

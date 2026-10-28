@@ -24,7 +24,7 @@ from typing import Annotated, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
-from app.api.deps import CurrentUser as _CurrentUserDep
+from app.api.deps import CurrentUser as _CurrentUserDep, run_path_guard
 from app.db.schemas.tactical_map import (
     CommanderMapOut,
     MapBaseOut,
@@ -33,7 +33,7 @@ from app.db.schemas.tactical_map import (
 )
 from app.services import tactical_map_service as svc
 
-router = APIRouter(tags=["tactical-map"])
+router = APIRouter(tags=["tactical-map"], dependencies=[Depends(run_path_guard)])
 
 CurrentUser = _CurrentUserDep  # TokenPayload (sub, role)
 

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DBSession, require_roles
+from app.services.run_data import RunDataError, assigned_server_mode
 from app.assistant import factory
 from app.assistant.agent import ask, sitrep
 from app.assistant.mission_intent import MissionDraftError, propose
@@ -104,6 +105,12 @@ class SitrepRequest(BaseModel):
 @router.post("/sitrep", response_model=AskResponse, summary="상황 보고 초안 작성 (근거 번호 포함, 통제관은 담당 제대 범위)")
 @limiter.limit(settings.assistant_rate_limit)
 async def make_sitrep(request: Request, body: SitrepRequest, db: DBSession, user: CurrentUser):
+    try:
+        assigned = await assigned_server_mode(db, user)
+    except RunDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if assigned and body.mode != assigned:
+        raise HTTPException(status_code=403, detail="담당 제대에 지정된 모드의 상황 보고만 만들 수 있습니다.")
     return await _run_and_log(db, user, "sitrep", f"상황 보고 ({body.mode})", lambda ctx, model: sitrep(ctx, model, body.mode))
 
 

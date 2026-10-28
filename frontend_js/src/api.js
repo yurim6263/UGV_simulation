@@ -129,16 +129,24 @@ export async function fetchServerReplay() {
     if (e.status === 404 && e.message.includes("제대의 기록이 없습니다")) e.unassigned = true;
     throw e;
   }
+  // 지휘관에게는 제대마다 지정한 모드의 기록을 합친 "지정 편성"도 온다 (통제관은 담당 제대 하나라 필요 없다)
+  const assigned = Object.keys(set.team_modes ?? {}).length > 1 ? await fetchAssigned(set.mission_id) : null;
   const scenario = {
     ...replays[0].scenario,
     mission_id: set.mission_id,
+    team_modes: set.team_modes ?? {},
     case: "서버 실행 · 그단스크 · 최적화 모드",
     turns: Math.max(...replays.map((r) => r.scenario.turns)),
     modes: replays.map((r) => r.scenario.modes[0]),
     overlays: [{ key: "total", label: "종합 위험도" }, { key: "mobility", label: "기동성 위험도" }, { key: "sensor", label: "센서 위험도" }],
   };
-  return { scenario, raws: replays.map((r) => r.mode) };
+  return { scenario, raws: [...(assigned ? [assigned.mode] : []), ...replays.map((r) => r.mode)] };
 }
+
+// 제대별 모드 지정 (지휘관). 모드는 화면 이름(balance | explore | rush).
+export const setTeamModes = (missionId, teamModes) => request(`/api/missions/${missionId}/team-modes`, { method: "PUT", body: teamModes });
+// 제대마다 지정한 모드의 기록을 합친 재생 데이터 (재계산 없음)
+export const fetchAssigned = (missionId) => request(`/api/missions/${missionId}/assigned-replay`);
 
 export const overlayUrl = (kind, turn) => `${API_URL}/api/map/overlay/${kind}/${turn}.png`;
 

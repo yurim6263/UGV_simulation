@@ -73,6 +73,7 @@ class MissionOut(BaseModel):
     departure_lat: float
     departure_lon: float
     status: str
+    team_modes: dict | None = None
     created_at: datetime
     updated_at: datetime
     targets: list[MissionTargetOut] = []

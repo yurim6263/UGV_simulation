@@ -19,7 +19,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DBSession, require_roles
 from app.analysis.sql_reports import mode_comparison, run_report
 from app.db.models.simulation_run import SimulationRun
-from app.services.run_data import RunDataError, build_run_mode, load_run_data
+from app.services.run_data import ASSIGNED_KEY, ASSIGNED_LABEL, RunDataError, build_assigned_mode, build_run_mode, load_run_data, team_modes_of
 from app.simulation.presets import DEFAULT_START
 from app.simulation.replay import MODES, grid_bounds
 
@@ -30,28 +30,51 @@ _MODE_OF = {"balanced": "balance", "recon": "explore", "rapid": "rush"}
 
 @router.get("/runs/{run_id}/replay", summary="시뮬레이션 재생 데이터")
 async def get_replay(run_id: int, db: DBSession, user: CurrentUser):
-    from app.simulation.algo.sim_config import SimAlgoConfig   # 지형 파일은 이 API 를 쓸 때만 읽는다
-
     try:
         data = await load_run_data(db, run_id, user)           # 통제관은 자기 제대의 기록만 받는다
         mode_data, pois = await build_run_mode(db, data)
     except RunDataError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
+    modes = team_modes_of(data.mission)
+    if data.team is not None:                       # 통제관에게는 담당 제대의 지정 모드만 알려 준다
+        modes = {data.team: modes[data.team]}
+    return {
+        "scenario": _scenario(data.mission, pois, mode_data["kpi"]["turns"], [{"key": data.mode_key, "label": MODES[data.mode_key]}], modes),
+        "mode": mode_data,
+    }
+
+
+def _scenario(mission, pois, turns: int, modes: list[dict], team_modes: dict) -> dict:
+    from app.simulation.algo.sim_config import SimAlgoConfig
     from app.simulation.shared_env import get_environment
 
     meta = SimAlgoConfig.meta()
     start_time = get_environment().start_time
     return {
-        "scenario": {
-            "start_time": start_time.isoformat() if start_time else None,      # 데이터의 시작 시각 (표준 시간대 정보 없음)
-            "turn_minutes": 10,
-            "turns": int(data.frame.turn_idx.max()) + 1,
-            "bounds": grid_bounds(meta.lat, meta.lon),
-            "start": [data.mission.departure_lat, data.mission.departure_lon] if data.mission else list(DEFAULT_START),
-            "pois": [{"id": i + 1, "lat": p[0], "lon": p[1]} for i, p in enumerate(pois)],
-            "modes": [{"key": data.mode_key, "label": MODES[data.mode_key]}],
-        },
+        "start_time": start_time.isoformat() if start_time else None,      # 데이터의 시작 시각 (표준 시간대 정보 없음)
+        "turn_minutes": 10,
+        "turns": turns,
+        "bounds": grid_bounds(meta.lat, meta.lon),
+        "start": [mission.departure_lat, mission.departure_lon] if mission else list(DEFAULT_START),
+        "pois": [{"id": i + 1, "lat": p[0], "lon": p[1]} for i, p in enumerate(pois)],
+        "modes": modes,
+        "team_modes": team_modes,
+    }
+
+
+@router.get(
+    "/missions/{mission_id}/assigned-replay",
+    summary="제대마다 지정한 모드의 기록을 합친 재생 데이터 (지휘관 전용, 재계산 없음)",
+    dependencies=[Depends(require_roles("commander"))],
+)
+async def get_assigned_replay(mission_id: int, db: DBSession):
+    try:
+        mode_data, pois, mission, modes = await build_assigned_mode(db, mission_id)
+    except RunDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {
+        "scenario": _scenario(mission, pois, mode_data["kpi"]["turns"], [{"key": ASSIGNED_KEY, "label": ASSIGNED_LABEL}], modes),
         "mode": mode_data,
     }
 

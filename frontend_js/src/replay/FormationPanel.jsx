@@ -21,7 +21,7 @@ export default function FormationPanel({ replay }) {
     return () => { cancelled = true; };
   }, [missionId]);
 
-  const mode = replay.mode;
+  const mode = MODES.some(([k]) => k === replay.mode) ? replay.mode : "balance";   // "지정 편성" 보기일 때는 균형 표를 보여 준다
   const plan = state.plan;
   const rows = useMemo(() => {
     const cands = plan?.modes[mode]?.candidates ?? [];

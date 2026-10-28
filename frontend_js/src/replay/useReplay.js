@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchServerReplay, overlayUrl as serverOverlayUrl } from "../api";
+import { fetchAssigned, fetchServerReplay, overlayUrl as serverOverlayUrl, setTeamModes } from "../api";
 import { buildReplay, frameForTurn } from "./replayModel";
 
 // 재생 화면의 단일 상태 저장소.
@@ -11,6 +11,8 @@ export function useReplay() {
   const [models, setModels] = useState(null);
   const [error, setError] = useState("");
   const [unassigned, setUnassigned] = useState(false);   // 이 계정의 제대가 이번 임무에 편성되지 않음
+  const [teamModes, setTeamModesState] = useState({});     // 제대별 지정 모드 { Alpha: "balance", ... } (통제관은 담당 제대 것만)
+  const [assignError, setAssignError] = useState("");
 
   const [mode, setModeState] = useState("balance");
   const [overlay, setOverlay] = useState("total");
@@ -34,8 +36,9 @@ export function useReplay() {
         const { scenario: sc, raws } = await fetchServerReplay();
         if (cancelled) return;
         setScenario(sc);
+        setTeamModesState(sc.team_modes ?? {});
         setModels(Object.fromEntries(raws.map((r) => [r.mode, buildReplay(r)])));
-        setModeState((current) => (raws.some((r) => r.mode === current) ? current : raws[0].mode));
+        setModeState(raws.some((r) => r.mode === "assigned") ? "assigned" : (current) => (raws.some((r) => r.mode === current) ? current : raws[0].mode));
       } catch (e) {
         if (cancelled) return;
         if (e.unassigned) setUnassigned(true);
@@ -83,12 +86,28 @@ export function useReplay() {
     });
   }, [lastFrame]);
 
+  // 제대의 모드를 바꾼다: 서버에 저장하고, 지정 편성을 다시 합친다 (시뮬레이션을 다시 돌리지 않는다)
+  const assignMode = useCallback(async (team, nextMode) => {
+    if (!scenario || teamModes[team] === nextMode) return;
+    setAssignError("");
+    try {
+      const saved = await setTeamModes(scenario.mission_id, { [team]: nextMode });
+      const raw = (await fetchAssigned(scenario.mission_id)).mode;
+      setTeamModesState(saved.team_modes);
+      setModels((current) => ({ ...current, assigned: buildReplay(raw) }));
+      setFrame((f) => Math.min(f, Math.max(0, raw.steps.length - 1)));
+    } catch (e) {
+      setAssignError(e.message);
+    }
+  }, [scenario, teamModes]);
+
   const toggleTeam = useCallback((team) => setTeams((t) => ({ ...t, [team]: !t[team] })), []);
 
   return useMemo(() => ({
     overlayUrl, scenario, models, model, error, unassigned, loading: !error && !unassigned && !model,
+    teamModes, assignMode, assignError,
     mode, setMode, overlay, setOverlay, frame, seek, lastFrame,
     playing, setPlaying, togglePlay, speed, setSpeed,
     teams, toggleTeam, selected, setSelected,
-  }), [overlayUrl, scenario, models, model, error, unassigned, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
+  }), [overlayUrl, scenario, models, model, error, unassigned, teamModes, assignMode, assignError, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
 }

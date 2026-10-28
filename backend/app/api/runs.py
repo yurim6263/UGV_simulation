@@ -14,12 +14,14 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DBSession, require_roles
+from app.api.deps import CurrentUser, DBSession, require_roles, run_path_guard
 from app.db.models.simulation_run import SimulationRun
 from app.db.schemas.simulation import RunOut, RunSetItem, RunSetOut
+from app.services.run_data import COMMANDER_ROLES, MODE_OF, team_modes_of, team_scope
 from app.services.simulation_service import SimulationService
+from app.db.models.mission import Mission
 
-router = APIRouter(tags=["runs"])
+router = APIRouter(tags=["runs"], dependencies=[Depends(run_path_guard)])
 
 
 @router.post(
@@ -52,10 +54,17 @@ async def latest_run_set(db: DBSession, user: CurrentUser):
     runs = (await db.execute(
         select(SimulationRun).where(SimulationRun.mission_id == latest).order_by(SimulationRun.id)
     )).scalars().all()
+    modes = team_modes_of(await db.get(Mission, latest))
+    shown = runs
+    if user.role not in COMMANDER_ROLES:               # 통제관에게는 담당 제대에 지정된 모드의 실행만 알려 준다
+        team = team_scope(user)
+        shown = [r for r in runs if MODE_OF.get(r.selected_mode or "balanced", "balance") == modes[team]]
+        modes = {team: modes[team]}
     return RunSetOut(
         mission_id=latest,
-        runs=[RunSetItem(id=r.id, mode=r.selected_mode or "balanced", status=r.status, progress_pct=r.progress_pct) for r in runs],
+        runs=[RunSetItem(id=r.id, mode=r.selected_mode or "balanced", status=r.status, progress_pct=r.progress_pct) for r in shown],
         all_completed=all(r.status == "COMPLETED" for r in runs),
+        team_modes=modes,
     )
 
 

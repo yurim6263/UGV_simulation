@@ -24,6 +24,7 @@ const MODES = [
   { label: "정밀", key: "explore" },
   { label: "신속", key: "rush" },
 ];
+const MODE_NAME = Object.fromEntries(MODES.map((m) => [m.key, m.label]));
 const OVERLAY_LABEL = { total: "종합", mobility: "기동성", sensor: "센서" };
 
 
@@ -457,7 +458,9 @@ function MainDashboard({ account, onLogout }) {
     () => (models ? Object.fromEntries(Object.entries(models).map(([k, m]) => [k, scopedKpi(m, myTeam)])) : {}),
     [models, myTeam],
   );
-  const tabs = [["summary", "요약"], ["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"]]), ["pareto", "최적화"], ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
+  const tabs = [["summary", "요약"], ["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"], ["pareto", "최적화"]]), ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
+  const { teamModes } = replay;
+  const assignText = shownTeams.map((t) => `${TEAM_UNIT[t]} ${MODE_NAME[teamModes[t]] ?? "-"}`).join(" · ");
 
   return (
     <main className="app">
@@ -477,8 +480,28 @@ function MainDashboard({ account, onLogout }) {
 
       <div className="body three">
         <aside className="rail">
+          {myTeam && model && (
+            <section>
+              <h2 className="h">임무 모드</h2>
+              <div className="mode on static">
+                <span className="n">{MODE_NAME[replay.mode] ?? replay.mode}<small>지휘관 지정</small></span>
+                <span className="d">{MODE_FOCUS[replay.mode]?.desc}</span>
+              </div>
+            </section>
+          )}
+          {!myTeam && (
           <section>
             <h2 className="h">임무 모드</h2>
+            {models?.assigned && (
+              <button className={`mode assigned ${replay.mode === "assigned" ? "on" : ""}`} onClick={() => replay.setMode("assigned")}>
+                <span className="n">지정 편성{replay.mode === "assigned" && <small>선택됨</small>}</span>
+                <span className="d">제대마다 지정한 모드의 기록을 합친 결과</span>
+                <span className="mode-form">{assignText}</span>
+                <span className="mode-form" title="제대별 UGV 투입 대수">편성 <b className="num">{formationText(models.assigned, myTeam)}</b></span>
+                {modeKpi.assigned && <span className="m"><span>도착 <b className="num">{modeKpi.assigned.arrived}/{modeKpi.assigned.total}</b></span><span>SOS <b className="num">{modeKpi.assigned.sos}</b></span></span>}
+              </button>
+            )}
+            {models?.assigned && <p className="hint tight sub-h">모드별 결과 (비교용)</p>}
             {MODES.map((m) => {
               const k = modeKpi[m.key];
               const focus = MODE_FOCUS[m.key];
@@ -494,6 +517,21 @@ function MainDashboard({ account, onLogout }) {
               );
             })}
           </section>
+          )}
+          {!myTeam && model && models?.assigned && (
+            <section>
+              <h2 className="h">제대별 모드 지정</h2>
+              {shownTeams.map((t) => (
+                <div className="assign" key={t}>
+                  <i style={{ background: TEAM_COLOR[t] }} />
+                  <span>{TEAM_UNIT[t]}</span>
+                  <Seg value={teamModes[t]} options={MODES.map((m) => [m.key, m.label])} onChange={(v) => replay.assignMode(t, v)} />
+                </div>
+              ))}
+              {replay.assignError && <p className="form-error" role="alert">{replay.assignError}</p>}
+              <p className="hint tight">바꿔도 다시 계산하지 않고 저장된 모드별 기록을 제대별로 합칩니다. 제대끼리 서로 영향이 없다는 가정입니다. 통제관은 자기 제대에 지정된 모드만 볼 수 있습니다.</p>
+            </section>
+          )}
           <section>
             <h2 className="h">지도 표시</h2>
             <Seg value={replay.overlay} options={Object.entries(OVERLAY_LABEL)} onChange={replay.setOverlay} />
@@ -525,7 +563,7 @@ function MainDashboard({ account, onLogout }) {
               <p className="hint tight">도착: 제대 UGV 중 임무를 마친 비율. 고위험: 이동 기록 중 상대 등급 R 칸에서 보낸 비율.</p>
             </section>
           )}
-          {account.role === "commander" && <button className="btn primary block big push" onClick={() => notify("임무를 통제관에게 하달했습니다.")}>임무 하달</button>}
+          {account.role === "commander" && <button className="btn primary block big push" onClick={() => notify(`임무를 하달했습니다 (${assignText})`)} disabled={!model}>임무 하달</button>}
         </aside>
 
         <div className="center-col">
@@ -557,7 +595,7 @@ function MainDashboard({ account, onLogout }) {
             {tab === "formation" && model && <FormationPanel replay={replay} />}
             {tab === "pareto" && <ParetoPanel onPickMode={replay.setMode} />}
             {tab === "forecast" && model && <ForecastPanel replay={replay} allowedTeams={allowedTeams} />}
-            {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode} />}
+            {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode === "assigned" ? "balance" : replay.mode} />}
           </div>
         </aside>
       </div>
@@ -572,7 +610,8 @@ function UserMissionPage({ account, onConfirm, onLogout }) {
   const replay = useReplay();
   const team = USER_TEAM[account.username];
   const unit = units.find((item) => item.key === account.username);
-  const model = replay.models?.balance;
+  const model = replay.model;                              // 통제관에게는 지정된 모드의 기록 하나만 온다
+  const modeLabel = replay.scenario?.modes?.[0]?.label ?? "-";
   const pt = model?.kpi.per_team[team];
   const poi = pt?.poi ? replay.scenario?.pois.find((p) => p.id === pt.poi) : null;
   const dash = (v) => (v === null || v === undefined ? "-" : v);
@@ -599,13 +638,13 @@ function UserMissionPage({ account, onConfirm, onLogout }) {
             <p className="kv"><span>목표 위도</span><b className="num">{dash(poi?.lat)}</b></p>
             <p className="kv"><span>목표 경도</span><b className="num">{dash(poi?.lon)}</b></p>
           </section>
-          <section className="card"><h2 className="h">시뮬레이션 결과 · 균형 (1회 실행)</h2>
+          <section className="card"><h2 className="h">시뮬레이션 결과 · {modeLabel} (1회 실행)</h2>
             <p className="kv"><span>도착 UGV</span><b className="num">{pt ? `${pt.arrived} / ${pt.ugv}` : "-"}</b></p>
             <p className="kv"><span>SOS 발생</span><b className="num risk">{pt ? `${pt.sos}건` : "-"}</b></p>
             <p className="kv"><span>평균 개입 대기</span><b className="num">{pt ? `${Math.round(pt.wait_turns_mean * 10)}분` : "-"}</b></p>
           </section>
           <section className="card"><h2 className="h">임무 정보</h2>
-            <p className="kv"><span>임무 모드</span><b className="amber">균형</b></p>
+            <p className="kv"><span>임무 모드 (지휘관 지정)</span><b className="amber">{modeLabel}</b></p>
             <p className="kv"><span>출발 시각</span><b className="num">{launchTurn === null ? "-" : elapsedLabel(launchTurn)}</b></p>
             <p className="kv"><span>도착 시각 (시뮬레이션)</span><b className="num">{pt ? (pt.arrive_turn == null ? "미도착" : elapsedLabel(pt.arrive_turn + 1)) : "-"}</b></p>
             {startIso && <p className="kv"><span>시나리오 시각</span><b className="num">{clockText(startIso, (launchTurn ?? 0) * 10)} → {pt?.arrive_turn == null ? "-" : clockText(startIso, (pt.arrive_turn + 1) * 10)}</b></p>}

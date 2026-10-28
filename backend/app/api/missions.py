@@ -13,6 +13,9 @@ POST   /api/missions/{mission_id}/force-mix-candidates
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import CurrentUser, DBSession, require_roles
+from app.db.models.mission import Mission
+from app.services.run_data import COMMANDER_ROLES, RunDataError, team_modes_of, team_scope
+from app.simulation.replay import MODES, TEAMS
 from app.db.schemas.dashboard import CommanderSetupOut
 from app.db.schemas.mission import (
     ForceMixCandidateIn,
@@ -80,6 +83,40 @@ async def set_targets(
         raise HTTPException(status_code=422, detail="목적지는 최대 3개입니다.")
     svc = MissionService(db)
     return await svc.set_targets(mission_id, body)
+
+
+@router.get("/{mission_id}/team-modes", summary="제대별 지정 모드 (통제관은 담당 제대 것만)")
+async def get_team_modes(mission_id: int, db: DBSession, user: CurrentUser):
+    mission = await db.get(Mission, mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+    modes = team_modes_of(mission)
+    if user.role not in COMMANDER_ROLES:
+        try:
+            team = team_scope(user)
+        except RunDataError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        modes = {team: modes[team]}
+    return {"mission_id": mission_id, "team_modes": modes}
+
+
+@router.put(
+    "/{mission_id}/team-modes",
+    summary="제대별 모드 지정 (지휘관). 보내지 않은 제대는 기존 값을 유지한다",
+    dependencies=[Depends(require_roles("commander"))],
+)
+async def put_team_modes(mission_id: int, body: dict[str, str], db: DBSession):
+    """예: {"Alpha": "balance", "Bravo": "explore", "Charlie": "rush"}. 모드는 balance(균형) | explore(정밀) | rush(신속)."""
+    bad_team = [t for t in body if t not in TEAMS]
+    bad_mode = [m for m in body.values() if m not in MODES]
+    if bad_team or bad_mode:
+        raise HTTPException(status_code=422, detail=f"제대는 {TEAMS}, 모드는 {list(MODES)} 중에서 골라야 합니다. (잘못된 값: {bad_team + bad_mode})")
+    mission = await db.get(Mission, mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+    mission.team_modes = {**team_modes_of(mission), **body}           # JSON 컬럼은 새 dict 를 대입해야 변경으로 인식된다
+    await db.commit()
+    return {"mission_id": mission_id, "team_modes": team_modes_of(mission)}
 
 
 @router.post(

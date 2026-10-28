@@ -38,6 +38,8 @@ class Mission(Base):
     departure_lon: Mapped[float] = mapped_column(Double, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
     # DRAFT | READY | RUNNING | COMPLETED
+    team_modes: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # 제대별 지정 모드 {"Alpha": "balance", "Bravo": "explore", "Charlie": "rush"}. 비어 있으면 모두 균형.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

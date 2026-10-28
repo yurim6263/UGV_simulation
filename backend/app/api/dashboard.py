@@ -16,7 +16,7 @@ GET /api/runs/{run_id}/recommendation
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import CurrentUser, DBSession, echelon_of, require_roles
+from app.api.deps import CurrentUser, DBSession, echelon_of, require_roles, run_path_guard
 from fastapi import HTTPException
 
 from app.db.schemas.dashboard import (
@@ -57,7 +57,7 @@ from app.db.schemas.dashboard import (
 
 from app.services.dashboard_service import DashboardService
 
-router = APIRouter(prefix="/runs", tags=["dashboard"])
+router = APIRouter(prefix="/runs", tags=["dashboard"], dependencies=[Depends(run_path_guard)])
 
 @router.get(
     "/home/summary",

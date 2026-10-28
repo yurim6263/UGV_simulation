@@ -25,6 +25,7 @@ class RunSetOut(BaseModel):
     mission_id: int
     runs: list[RunSetItem]
     all_completed: bool
+    team_modes: dict[str, str] = {}      # 제대별 지정 모드 (통제관에게는 담당 제대 것만)
 
 
 class RunOut(BaseModel):

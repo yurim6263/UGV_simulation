@@ -79,7 +79,10 @@
 | `POST /api/missions/{id}/runs?mode=balanced\|recon\|rapid` | 모드별 실행 생성 | 로그인 |
 | `POST /api/runs/{id}/start` | 시뮬레이션 실행 | 로그인 |
 | `POST /api/missions/{id}/plan`, `GET /api/missions/{id}/plan` | 편성 계산 시작 / 진행률과 결과 | 지휘관 |
-| `GET /api/runs/{id}/replay` | 재생 데이터 (통제관은 담당 제대만) | 로그인 |
+| `GET /api/runs/{id}/replay` | 재생 데이터 (통제관은 담당 제대의, 지정된 모드의 run 만) | 로그인 |
+| `PUT /api/missions/{id}/team-modes`, `GET /api/missions/{id}/team-modes` | 제대별 모드 지정 / 조회 (통제관은 담당 제대 것만) | 지휘관 / 로그인 |
+| `GET /api/missions/{id}/assigned-replay` | 제대마다 지정한 모드의 기록을 합친 재생 데이터 (재계산 없음) | 지휘관 |
+| `GET /api/runs/latest-set` | 가장 최근 임무의 실행 목록 (통제관은 지정된 모드의 실행만) | 로그인 |
 | `GET /api/runs/{id}/analysis` | 실행 기록 SQL 분석 | 지휘관 |
 | `GET /api/map/overlay/{kind}/{turn}.png` | 위험도 오버레이 이미지 | 공개 |
 | `GET /api/assistant/status`, `POST /api/assistant/ask` | AI 어시스턴트 | 로그인 |
