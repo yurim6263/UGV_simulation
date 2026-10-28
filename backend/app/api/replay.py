@@ -3,7 +3,7 @@ backend/app/api/replay.py
 
 GET /api/runs/{run_id}/replay — 저장된 이동 기록(run_tracks)을 재생 화면 형식으로 반환.
 
-정적 JSON(export_replay.py / run_episode.py)과 같은 형식이라, 프론트는 파일 대신 이 API 를 읽어도 된다.
+프론트의 재생 화면은 이 API 만 읽는다.
 통제관은 자기 제대의 기록만 받는다.
 """
 

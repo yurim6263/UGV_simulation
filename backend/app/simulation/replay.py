@@ -7,7 +7,7 @@ backend/app/simulation/replay.py
     seq_idx, turn_idx, agent_id, row, col, lat, lon, action, ap, risk_grade,
     normalized_c_total, c_mob_prime, c_sen_prime  (+ 선택: rain_mmph, swvl1, sde_m, fog_prob, vis_class)
 
-화면은 이 데이터만 읽는다. 서버 API(GET /api/runs/{id}/replay)와 정적 JSON(export_replay.py)이 같은 형식을 쓴다.
+화면은 이 데이터만 읽는다. 서버 API(GET /api/runs/{id}/replay)가 이 형식을 쓴다.
 """
 
 from __future__ import annotations

@@ -29,7 +29,6 @@ export default function FormationPanel({ replay }) {
     return [...list].sort((a, b) => (a[sort.by] - b[sort.by]) * sort.dir || a.total - b.total);
   }, [plan, mode, sort, onlyBest]);
 
-  if (replay.source !== "server") return <p className="empty">편성 계산은 "서버 실행" 출처에서만 볼 수 있습니다.</p>;
   if (state.loading) return <p className="empty">불러오는 중…</p>;
   if (state.none) return <p className="empty">이 임무는 편성 계산 없이 실행되어, 보유 UGV를 제대에 고르게(제대당 최대 3대) 나눴습니다.</p>;
 

@@ -166,8 +166,6 @@ npm.cmd run dev
 
 | 하는 일 | 실행 |
 |---|---|
-| 팀원 이동 기록을 재생 데이터로 변환 | `python backend/scripts/export_replay.py --csv-dir "<final_project>/html_code/enriched_csv_path" --case-dir "<final_project>/html_code/15_Fog-driven_20230726_0300/15_Fog-driven_20230726_0300" --out frontend_js/static/replay` |
-| 엔진으로 같은 시나리오 실행 | `python backend/scripts/run_episode.py --out frontend_js/static/replay_engine --scale moderate --seed 1` |
 | NSGA-II 최적화 + 검증 | `python backend/scripts/run_nsga2.py --pop 20 --gens 10 --val-seeds 10 --workers 6 --out backend/data/optimization/pareto.json` (약 40~70분, 작업자당 메모리 약 180MB) |
 | 최적화 보고서 | `python backend/scripts/make_report.py` |
 | 강수 예측 학습 / 예보 오차 보고서 | `python backend/scripts/train_rain_model.py --era5-dir "<ERA5_land>"` → `python backend/scripts/make_weather_report.py` |
@@ -177,7 +175,7 @@ npm.cmd run dev
 - `backend/data/optimization/pareto.json`이 있으면 서버가 이 결과의 신속/정밀/균형 원형의 **전술 성향(유전자)**을 모드 설정으로 씁니다. `SIM_PRESETS=reference`로 팀원 기준 프리셋을 강제할 수 있습니다. **제대별 UGV 수(편성)는 모드에 고정되어 있지 않고** 편성 계산기가 목표 위치에서 계산합니다.
 - `python backend/scripts/precompute_formation.py`는 기본 목표의 편성 계산을 미리 해 둡니다(`backend/data/formation/default_plan.json`). 엔진이나 모드 전술이 바뀌면 다시 실행하세요.
 - 시뮬레이션 환경변수: `SIM_WEATHER_SCALE`(clear / moderate / severe 또는 0~1, 기본 moderate), `SIM_TICK_SLEEP`(턴 사이 대기 초).
-- 대시보드는 **서버가 방금 계산한 결과**만 재생합니다. 예전에 있던 "팀원 기록"과 "엔진 실행" 출처(고정된 저장본)는 목표를 바꿔도 변하지 않고 옛 고정 편성을 담고 있어서 화면에서 뺐습니다. `frontend_js/static/replay*` 폴더와 변환 스크립트(`export_replay.py`, `run_episode.py`)는 참고용으로 남아 있습니다.
+- 대시보드는 **서버가 방금 계산한 결과**만 재생합니다. 예전에 있던 "팀원 기록"과 "엔진 실행" 출처(미리 저장해 둔 고정 파일)는 목표를 바꿔도 변하지 않고 옛 고정 편성을 담고 있어서 화면, 저장본, 변환 스크립트를 모두 제거했습니다 (git 기록에는 남아 있습니다).
 
 ## 프로젝트 구조
 

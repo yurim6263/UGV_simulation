@@ -362,7 +362,7 @@ function Seg({ value, options, onChange, disabled, hints }) {
 }
 
 function MainDashboard({ account, onLogout }) {
-  const replay = useReplay("server");               // 재생 데이터는 서버가 방금 계산한 결과뿐이다 (고정된 저장본 출처는 없앴다)
+  const replay = useReplay();
   const [tab, setTab] = useState("events");
   const [notice, setNotice] = useState("");
   const notify = (text) => { setNotice(text); setTimeout(() => setNotice(""), 2400); };
@@ -487,7 +487,7 @@ function MainDashboard({ account, onLogout }) {
 
 function UserMissionPage({ account, onConfirm, onLogout }) {
   // 서버가 돌려준 이 제대의 시뮬레이션 결과(균형 모드)를 보여준다. 통제관은 자기 제대 기록만 받는다.
-  const replay = useReplay("server");
+  const replay = useReplay();
   const team = USER_TEAM[account.username];
   const unit = units.find((item) => item.key === account.username);
   const model = replay.models?.balance;

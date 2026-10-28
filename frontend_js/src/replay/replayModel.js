@@ -1,14 +1,6 @@
 // 재생 데이터 모델: 이동 기록(JSON) → 프레임별 상태 / 이벤트.
 // 지도·패널은 이 모델에서 파생된 값만 읽는다 (HTML 안에 섞여 있던 로직을 분리한 것).
 
-// 재생 데이터 출처: 서버 실행(API) / 팀원 시뮬레이션 기록(참조, 정적) / 엔진 실행(정적 사본)
-export const REPLAY_SOURCES = {
-  server: { label: "서버 실행", dir: null, desc: "방금 서버가 계산한 결과입니다 (지휘관이 실행한 임무의 3개 모드)." },
-  reference: { label: "팀원 기록", dir: "replay", desc: "팀원 시뮬레이터가 남긴 이동 기록입니다. 비교용 참조 자료이고 고정된 파일이라 임무를 바꿔도 변하지 않습니다." },
-  engine: { label: "엔진 실행", dir: "replay_engine", desc: "이 프로젝트의 엔진이 같은 시나리오를 돌려 저장해 둔 결과입니다. 고정된 파일이라 임무를 바꿔도 변하지 않습니다." },
-};
-export const replayBase = (source) => (REPLAY_SOURCES[source].dir ? `${import.meta.env.BASE_URL}${REPLAY_SOURCES[source].dir}` : null);
-
 // 보유 UGV 수 (임무 생성 때 정한 값, launchMission 의 기본값과 같다). 제대마다 1~3대를 투입한다.
 export const FLEET_UGV = 9;
 

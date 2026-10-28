@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchServerReplay, overlayUrl as serverOverlayUrl } from "../api";
-import { buildReplay, frameForTurn, replayBase } from "./replayModel";
+import { buildReplay, frameForTurn } from "./replayModel";
 
 // 재생 화면의 단일 상태 저장소.
 // 지도와 모든 패널(모드, 오버레이, 시간, 제대 필터, 선택 UGV, 이벤트)이 같은 상태를 구독한다.
 const FRAME_MS = 120; // 1배속에서 프레임 간격
 
-export function useReplay(source = "server") {
-  const base = replayBase(source);
+export function useReplay() {
   const [scenario, setScenario] = useState(null);
   const [models, setModels] = useState(null);
   const [error, setError] = useState("");
@@ -30,20 +29,7 @@ export function useReplay(source = "server") {
     setSelected(null);
     (async () => {
       try {
-        let sc;
-        let raws;
-        if (source === "server") {
-          ({ scenario: sc, raws } = await fetchServerReplay());
-        } else {
-          sc = await (await fetch(`${base}/scenario.json`)).json();
-          raws = await Promise.all(
-            sc.modes.map(async (m) => {
-              const res = await fetch(`${base}/${m.key}.json`);
-              if (!res.ok) throw new Error(`${m.key}.json (${res.status})`);
-              return res.json();
-            }),
-          );
-        }
+        const { scenario: sc, raws } = await fetchServerReplay();
         if (cancelled) return;
         setScenario(sc);
         setModels(Object.fromEntries(raws.map((r) => [r.mode, buildReplay(r)])));
@@ -53,13 +39,10 @@ export function useReplay(source = "server") {
       }
     })();
     return () => { cancelled = true; };
-  }, [source, base]);
+  }, []);
 
-  // 지도 오버레이 이미지 주소: 서버 실행은 API, 정적 출처는 변환 스크립트가 만든 PNG
-  const overlayUrl = useCallback(
-    (kind, turn) => (source === "server" ? serverOverlayUrl(kind, turn) : `${base}/overlay/${kind}/${turn}.png`),
-    [source, base],
-  );
+  // 지도 오버레이 이미지 주소 (서버가 그리는 위험도 PNG)
+  const overlayUrl = useCallback((kind, turn) => serverOverlayUrl(kind, turn), []);
 
   const model = models?.[mode] ?? null;
   const lastFrame = model ? model.frames.length - 1 : 0;
