@@ -88,11 +88,13 @@ async def main(args) -> int:
 
     async with AsyncSessionLocal() as db:
         try:
-            results = await run_eval(model, db, run_id)
+            results = await run_eval(model, db, run_id, only=set(args.only.split(",")) if args.only else None)
         except ModelError as exc:
             print(f"\n모델 호출 실패: {exc}", file=sys.stderr)
             if "404" in str(exc):
                 print("모델 이름 문제입니다. backend/.env 의 GEMINI_MODEL 을 AI Studio 에 보이는 이름으로 바꾸세요.", file=sys.stderr)
+            elif "PerDay" in str(exc):
+                print("무료 키의 하루 호출 한도가 소진됐습니다. 한도가 풀릴 때까지(오류 문구의 'retry in' 시간) 기다리거나, 다른 모델/결제 설정을 쓰세요.", file=sys.stderr)
             elif any(c in str(exc) for c in ("429", "503")):
                 print("구글 서버가 붐비거나 호출 한도에 걸렸습니다. 잠시 뒤 다시 하거나 --delay 값을 늘리세요.", file=sys.stderr)
             return 2
@@ -130,4 +132,5 @@ if __name__ == "__main__":
     ap.add_argument("--live", action="store_true", help="규칙 기반 모델 대신 Gemini 사용")
     ap.add_argument("--delay", type=float, default=0.0, help="모델 호출 사이 대기(초)")
     ap.add_argument("--out", help="결과 JSON 저장 경로")
+    ap.add_argument("--only", help="이 id 들만 평가 (쉼표로 구분). 무료 키의 하루 호출 한도를 아낄 때 쓴다")
     sys.exit(asyncio.run(main(ap.parse_args())))

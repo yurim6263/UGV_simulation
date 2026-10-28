@@ -93,4 +93,7 @@ class RuleBasedModel:
             return "; ".join(parts) + ". 구간이 겹치는 비교는 단정할 수 없습니다."
         if call.name == "get_forecast_quality":
             return f"예보의 평균 skill은 {data['mean_skill']:.2f}로 지속성보다 낮습니다 [{eid}]."
+        if call.name == "compare_modes":
+            parts = [f"{r['mode']} 모드 작전 시간 {r['mission_minutes']}분, SOS {r['sos_events']}건" for r in data["modes"]]
+            return "; ".join(parts) + f" [{eid}]. 모드별 1회 실행 기록입니다."
         return f"조회한 결과입니다 [{eid}]."

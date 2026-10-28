@@ -158,13 +158,18 @@ async def run_sql_analysis(ctx: ToolContext, args: dict) -> dict:
     result = await run_report(ctx.db, run_id)
     if not result["queue_by_turn"]:
         raise ToolError("아직 저장된 이동 기록이 없습니다.")
-    return {"run_id": run_id, "report": report, "data": result if report == "all" else {report: result[report]}}
+    return {"run_id": run_id, "report": report, "data": result if report == "all" else {report: result[report]},
+            "units": "turn_idx, sos_turn, *_turns 는 모두 '10분 단위 턴' 수다. 분으로 말하려면 x10 한다 (턴 3 = 30분)."}
 
 
 async def compare_modes(ctx: ToolContext, args: dict) -> dict:
     runs = await _latest_runs(ctx)
-    return {"mission_id": runs[0].mission_id, "modes": await mode_comparison(ctx.db, runs[0].mission_id),
-            "basis": "같은 임무, 같은 시드로 모드별 1회씩 실행한 기록 (통계적 비교가 아님)"}
+    rows = await mode_comparison(ctx.db, runs[0].mission_id)
+    for r in rows:                                   # 턴(10분 단위)을 그대로 두면 모델이 "9턴"을 "9분"으로 읽는다 (실제 Gemini 평가에서 발견)
+        r["mission_minutes"] = r.pop("turns") * 10
+    return {"mission_id": runs[0].mission_id, "modes": rows,
+            "basis": "같은 임무, 같은 시드로 모드별 1회씩 실행한 기록 (통계적 비교가 아님)",
+            "units": "mission_minutes 는 분, red_pct 는 %"}
 
 
 async def get_optimization_results(ctx: ToolContext, args: dict) -> dict:

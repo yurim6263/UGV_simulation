@@ -481,3 +481,21 @@ async def test_gemini_gives_up_after_retries_and_does_not_retry_permanent_errors
     with pytest.raises(ModelError):
         await GeminiClient("k", "m", client=SimpleNamespace(aio=notfound)).next("s", [Message("user", text="q")], [])
     assert notfound.calls == 1                                  # 404 는 다시 해도 소용없다
+
+
+@pytest.mark.asyncio
+async def test_gemini_does_not_retry_daily_quota_errors(monkeypatch):
+    from google.genai import types
+    from app.assistant import gemini
+
+    class Daily(_FlakyAio):
+        async def generate_content(self, **kwargs):
+            self.calls += 1
+            raise _CodedError(429, "Quota exceeded ... GenerateRequestsPerDayPerProjectPerModel-FreeTier ... PerDay")
+
+    async def fake_sleep(s): raise AssertionError("하루 한도는 기다리지 않는다")
+    monkeypatch.setattr(gemini.asyncio, "sleep", fake_sleep)
+    aio = Daily(_response([types.Part(text="x")]), [])
+    with pytest.raises(ModelError):
+        await GeminiClient("k", "m", client=SimpleNamespace(aio=aio)).next("s", [Message("user", text="q")], [])
+    assert aio.calls == 1

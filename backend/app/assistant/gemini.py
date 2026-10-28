@@ -112,7 +112,8 @@ class GeminiClient:
             except ModelError:
                 raise
             except Exception as exc:  # noqa: BLE001 — 공급자 예외 종류가 많다. 키를 지우고 하나의 오류로 바꾼다.
-                if getattr(exc, "code", None) in TRANSIENT and attempt < RETRIES:
+                # 하루 한도(PerDay)는 몇 초 기다려도 풀리지 않으므로 다시 하지 않고 바로 알린다
+                if getattr(exc, "code", None) in TRANSIENT and "PerDay" not in str(exc) and attempt < RETRIES:
                     await asyncio.sleep(BACKOFF_SEC * 2 ** attempt)
                     continue
                 raise ModelError(f"Gemini 호출 실패 ({type(exc).__name__}): {str(exc).replace(self._api_key, '***')[:300]}") from exc

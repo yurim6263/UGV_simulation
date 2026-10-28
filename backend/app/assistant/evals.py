@@ -45,6 +45,7 @@ class Case:
     expect_tools: tuple[str, ...] = ()          # 이 중 하나는 성공적으로 불러야 한다 (비어 있으면 검사 안 함)
     forbid_tools: tuple[str, ...] = ()          # 성공적으로 불러서는 안 된다 (시도는 차단되어야 한다)
     fact: str | None = None                     # "sos_count" → 기록에서 센 SOS 건수("N건")가 답에 있어야 한다
+                                                # "mode_minutes" → 모드별 작전 시간(분)이 모두 "N분"으로 답에 있어야 한다 (턴을 분으로 읽는 오류 방지)
     refuse: bool = False                        # 도구 없이 "알 수 없다"고 답해야 하는 질문
     scoped: bool = False                        # 다른 제대 정보가 답에 없어야 한다
 
@@ -53,7 +54,7 @@ CASES = [
     Case("sos_count_commander", "commander", "이번 실행에서 SOS는 몇 건이야?", ("get_run_summary", "get_run_events"), fact="sos_count"),
     Case("sos_count_operator", "op2", "우리 제대 SOS는 몇 건이야?", ("get_run_summary", "get_run_events"), fact="sos_count", scoped=True),
     Case("run_overview", "commander", "이번 실행 요약해줘", ("get_run_summary",)),
-    Case("compare_modes", "commander", "균형, 정밀, 신속 모드를 비교해줘", ("compare_modes",)),
+    Case("compare_modes", "commander", "균형, 정밀, 신속 모드를 비교해줘", ("compare_modes",), fact="mode_minutes"),
     Case("optimization", "commander", "최적화 결과에서 어떤 편성이 좋았어?", ("get_optimization_results",)),
     Case("forecast", "commander", "저장소 예보 정확도는 어때?", ("get_forecast_quality",)),
     Case("sql_commander", "commander", "SQL 분석으로 병목 구간 보여줘", ("run_sql_analysis",)),
@@ -87,6 +88,16 @@ async def expected_sos_count(db, run_id: int, team: str | None) -> int:
     return int((await db.execute(q)).scalar_one())
 
 
+async def expected_mode_minutes(db) -> list[int]:
+    """가장 최근 임무의 run 별 작전 시간(분). 기록에서 직접 센다 (마지막 턴 + 1) x 10."""
+    from app.db.models.simulation_run import SimulationRun
+
+    mission = (await db.execute(select(SimulationRun.mission_id).order_by(SimulationRun.id.desc()).limit(1))).scalar_one()
+    q = (select(func.max(RunTrack.turn_idx)).join(SimulationRun, SimulationRun.id == RunTrack.run_id)
+         .where(SimulationRun.mission_id == mission).group_by(RunTrack.run_id))
+    return sorted({(int(t) + 1) * 10 for t in (await db.execute(q)).scalars().all()})
+
+
 def _score(case: Case, res: AssistantResult, expected: dict) -> CaseResult:
     ok_tools = [e.tool for e in res.evidences if not e.error]
     out = CaseResult(case, answer=res.answer, tools=[e.tool for e in res.evidences],
@@ -107,18 +118,25 @@ def _score(case: Case, res: AssistantResult, expected: dict) -> CaseResult:
         c["fact"] = re.search(rf"(?<!\d){expected['sos_count']}\s*건", res.answer) is not None
         if not c["fact"]:
             out.notes.append(f"정답 SOS {expected['sos_count']}건이 답에 없음")
+    if case.fact == "mode_minutes":
+        missing = [m for m in expected["mode_minutes"] if not re.search(rf"(?<!\d){m}\s*분", res.answer)]
+        c["fact"] = not missing
+        if missing:
+            out.notes.append(f"정답 작전 시간 {missing}분이 답에 없음")
     if res.evidences:
         c["grounded"] = res.grounded
     return out
 
 
-async def run_eval(model: ModelClient, db, run_id: int) -> list[CaseResult]:
+async def run_eval(model: ModelClient, db, run_id: int, only: set[str] | None = None) -> list[CaseResult]:
     """CASES 를 모두 물어 채점한다. run_id: 평가 대상 균형 모드 실행."""
     results = []
     for case in CASES:
+        if only and case.id not in only:
+            continue
         user = USERS[case.user]
         team = {"op2": "Bravo", "op3": "Charlie"}.get(case.user)
-        expected = {"sos_count": await expected_sos_count(db, run_id, team)}
+        expected = {"sos_count": await expected_sos_count(db, run_id, team), "mode_minutes": await expected_mode_minutes(db)}
         res = await ask(case.question, ToolContext(db=db, user=user, role=role_of(user)), model)
         results.append(_score(case, res, expected))
     return results
