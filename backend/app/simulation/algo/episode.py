@@ -72,6 +72,8 @@ class EpisodeResult:
     poi_cells: list[tuple]
     start_cell: tuple
     start_time: datetime
+    # 편성 계산기가 제대별 결과를 합칠 때 쓰는 값 (수색한 칸 마스크, 운용자 과부하였던 턴, 끝난 턴). 지표(metrics)에는 넣지 않는다.
+    detail: dict | None = None
 
 
 class _Unit:
@@ -177,7 +179,7 @@ def run_episode(env, spec: ScenarioSpec, genes: Genes | None = None, seed: int =
 
     log: list[dict] = []
     seq = 0
-    stats = {"sos": [], "interventions": 0, "waits": [], "op_ap_used": 0, "op_ap_avail": 0, "overload_turns": 0}
+    stats = {"sos": [], "interventions": 0, "waits": [], "op_ap_used": 0, "op_ap_avail": 0, "overload_turns": 0, "overload_set": []}
     visited: dict[tuple, int] = {}          # 셀 → 그 셀에서 본 최대 센서 반경 (V1)
     done_turn: int | None = None
 
@@ -379,17 +381,20 @@ def run_episode(env, spec: ScenarioSpec, genes: Genes | None = None, seed: int =
 
         if any_overload:
             stats["overload_turns"] += 1
+            stats["overload_set"].append(turn)
         if all(tm.done for tm in teams):
             done_turn = turn
             break
 
+    detail: dict = {}
     return EpisodeResult(
         log=log,
-        metrics=_metrics(env, spec, teams, stats, visited, done_turn, log),
+        metrics=_metrics(env, spec, teams, stats, visited, done_turn, log, detail),
         teams=[t.name for t in teams],
         poi_cells=poi_cells,
         start_cell=start_cell,
         start_time=start_time,
+        detail={**detail, "overload_turns": list(stats["overload_set"]), "done_turn": done_turn},
     )
 
 
@@ -425,7 +430,7 @@ def _follow(tm: _Team, spec: ScenarioSpec, A_tot, A_mob, A_sen, step_cost, emit,
     return moved
 
 
-def _metrics(env, spec: ScenarioSpec, teams: list[_Team], stats: dict, visited: dict, done_turn, log: list) -> dict:
+def _metrics(env, spec: ScenarioSpec, teams: list[_Team], stats: dict, visited: dict, done_turn, log: list, detail: dict | None = None) -> dict:
     ugvs = [u for tm in teams for u in tm.ugvs]
     arrived = [u for u in ugvs if u.state == "ARRIVED"]
     turns_used = (done_turn if done_turn is not None else spec.max_turns - 1) + 1
@@ -442,6 +447,9 @@ def _metrics(env, spec: ScenarioSpec, teams: list[_Team], stats: dict, visited: 
         seen[y0:y1, x0:x1] |= mask[y0 - top:y1 - top, x0 - left:x1 - left]
     valid = (~env.blocked) & np.isfinite(env.latest_actual_at(env.start_time, "mob"))
     coverage = float((seen & valid).sum() / max(1, valid.sum()))
+    if detail is not None:
+        detail["seen"] = seen & valid                       # 합집합을 구할 수 있게 마스크를 내보낸다
+        detail["valid_cells"] = int(valid.sum())
 
     waits = stats["waits"]
     per_team = {}

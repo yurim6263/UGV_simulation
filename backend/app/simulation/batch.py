@@ -34,6 +34,7 @@ class BatchResult:
     job: Job
     metrics: dict
     log: list | None = None
+    detail: dict | None = None         # keep_detail=True 일 때: 수색 마스크 등 (편성 계산기용)
 
 
 def _init_worker() -> None:
@@ -42,10 +43,11 @@ def _init_worker() -> None:
 
 
 def _run_job(args: tuple) -> BatchResult:
-    job, keep_log = args
+    job, keep_log, keep_detail = args
     from app.simulation.shared_env import get_environment
     result = run_episode(get_environment(), job.spec, job.genes, job.seed)
-    return BatchResult(job=job, metrics=result.metrics, log=result.log if keep_log else None)
+    return BatchResult(job=job, metrics=result.metrics, log=result.log if keep_log else None,
+                       detail=result.detail if keep_detail else None)
 
 
 def default_workers() -> int:
@@ -53,7 +55,8 @@ def default_workers() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
-def run_batch(jobs: list[Job], workers: int | None = None, keep_log: bool = False, retries: int = 2) -> list[BatchResult]:
+def run_batch(jobs: list[Job], workers: int | None = None, keep_log: bool = False, retries: int = 2,
+              keep_detail: bool = False, on_progress=None) -> list[BatchResult]:
     """jobs 를 병렬로 실행해 같은 순서의 결과를 돌려준다. workers=1 이면 현재 프로세스에서 순차 실행.
 
     윈도우에서 작업 프로세스가 갑자기 죽어 풀이 깨지는 일이 있다(BrokenProcessPool). 그때는 이미 끝난
@@ -63,7 +66,12 @@ def run_batch(jobs: list[Job], workers: int | None = None, keep_log: bool = Fals
     workers = min(workers or default_workers(), max(1, len(jobs)))
     if workers == 1:
         _init_worker()
-        return [_run_job((j, keep_log)) for j in jobs]
+        out = []
+        for j in jobs:
+            out.append(_run_job((j, keep_log, keep_detail)))
+            if on_progress:
+                on_progress(len(out), len(jobs))
+        return out
 
     results: list[BatchResult | None] = [None] * len(jobs)
     pending = list(range(len(jobs)))
@@ -71,9 +79,11 @@ def run_batch(jobs: list[Job], workers: int | None = None, keep_log: bool = Fals
         futures: dict = {}
         try:
             with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as pool:
-                futures = {pool.submit(_run_job, (jobs[i], keep_log)): i for i in pending}
+                futures = {pool.submit(_run_job, (jobs[i], keep_log, keep_detail)): i for i in pending}
                 for fut in as_completed(futures):
                     results[futures[fut]] = fut.result()
+                    if on_progress:
+                        on_progress(sum(r is not None for r in results), len(jobs))
             return results                                    # type: ignore[return-value]
         except BrokenProcessPool:
             for fut, i in futures.items():                    # 깨지기 전에 끝난 결과를 건진다
