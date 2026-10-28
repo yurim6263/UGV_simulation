@@ -105,10 +105,11 @@ button.team:hover { border-color: var(--line2); }
 .status { position: absolute; z-index: 900; left: 24px; top: 24px; margin: 0; color: var(--soft); }
 .status.error { color: #ff9a8a; }
 
-.pin { width: 28px; height: 28px; display: grid; place-items: center; border: 3px solid #0b1117; border-radius: 50%; box-shadow: 0 0 0 1px #ffffff55; font-size: 13px; font-weight: 700; color: #0b1117; }
-.pin.start { width: 18px; height: 18px; border-radius: 4px; background: #0b1117; border: 2px solid var(--text); box-shadow: none; }
 .leaflet-marker-wrapper { background: transparent; border: 0; }
-.replay-star { font-size: 24px; line-height: 24px; text-align: center; font-weight: bold; text-shadow: 0 0 3px #000; }
+.mk { display: block; overflow: visible; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .85)); }
+.mk-pulse { transform-box: fill-box; transform-origin: center; animation: mk-pulse 1.6s ease-out infinite; }
+@keyframes mk-pulse { from { transform: scale(1); opacity: .9; } to { transform: scale(2.3); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mk-pulse { animation: none; opacity: .6; } }
 .leaflet-tooltip { padding: 4px 8px; border: 1px solid var(--line2); border-radius: 6px; background: #0e151df2; color: var(--text); box-shadow: none; font: 500 12px var(--font); white-space: nowrap; }
 .leaflet-tooltip-top::before { border-top-color: var(--line2); }
 .leaflet-control-zoom { border: 1px solid var(--line2) !important; box-shadow: none !important; }

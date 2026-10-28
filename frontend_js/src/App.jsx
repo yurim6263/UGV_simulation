@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import L from "leaflet";
 import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
 import { API_URL, assistantStatus, clearToken, createMission, draftMission, latestRunSet, login as apiLogin, planFormation, startRuns, waitForRuns } from "./api";
 import { initialTargets, units } from "./data";
@@ -14,6 +13,7 @@ import ForecastPanel from "./replay/ForecastPanel";
 import { clockText, teamLaunchTurn } from "./replay/clock";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
+import { startIcon, targetIcon } from "./replay/mapMarkers";
 import { FLEET_UGV, GRADE_COLOR, TEAM_COLOR, TEAM_UNIT, USER_TEAM, elapsedLabel, formationText, scopedKpi, teamRedRatio } from "./replay/replayModel";
 
 const MAP_BOUNDS = [[54.2977, 18.2640], [54.5209, 18.6479]];
@@ -25,15 +25,6 @@ const MODES = [
 ];
 const OVERLAY_LABEL = { total: "종합", mobility: "기동성", sensor: "센서" };
 
-function pinIcon(color, label) {
-  return L.divIcon({
-    html: `<div class="pin" style="background:${color}">${label}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    className: "leaflet-marker-wrapper",
-  });
-}
-const startIcon = L.divIcon({ html: '<div class="pin start"></div>', iconSize: [18, 18], iconAnchor: [9, 9], className: "leaflet-marker-wrapper" });
 
 function Logo({ size = 28 }) {
   return (
@@ -148,11 +139,11 @@ function InputMap({ targets }) {
       <BaseMap />
       <ImageOverlay url={`${API_URL}/api/map/tactical/terrain-image`} bounds={MAP_BOUNDS} opacity={0.55} />
       <ImageOverlay url={`${API_URL}/api/map/tactical/cost-image?layer=risk`} bounds={MAP_BOUNDS} opacity={0.6} />
-      <Marker position={[54.48, 18.32]} icon={startIcon} interactive={false}>
-        <Tooltip permanent direction="top" offset={[0, -10]}>출발지</Tooltip>
+      <Marker position={[54.48, 18.32]} icon={startIcon()} interactive={false}>
+        <Tooltip permanent direction="top" offset={[0, -34]}>출발지</Tooltip>
       </Marker>
       {Object.entries(targets).filter(([, t]) => validPoint(t)).map(([key, t], i) => (
-        <Marker key={key} position={[Number(t.lat), Number(t.lng)]} icon={pinIcon(TEAM_COLOR[USER_TEAM[key]], i + 1)} interactive={false} />
+        <Marker key={key} position={[Number(t.lat), Number(t.lng)]} icon={targetIcon(TEAM_COLOR[USER_TEAM[key]], i + 1)} interactive={false} />
       ))}
     </MapContainer>
   );

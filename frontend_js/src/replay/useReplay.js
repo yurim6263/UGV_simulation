@@ -82,9 +82,9 @@ export function useReplay() {
   const toggleTeam = useCallback((team) => setTeams((t) => ({ ...t, [team]: !t[team] })), []);
 
   return useMemo(() => ({
-    source, base, overlayUrl, scenario, models, model, error, loading: !error && !model,
+    overlayUrl, scenario, models, model, error, loading: !error && !model,
     mode, setMode, overlay, setOverlay, frame, seek, lastFrame,
     playing, setPlaying, togglePlay, speed, setSpeed,
     teams, toggleTeam, selected, setSelected,
-  }), [source, base, overlayUrl, scenario, models, model, error, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
+  }), [overlayUrl, scenario, models, model, error, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
 }

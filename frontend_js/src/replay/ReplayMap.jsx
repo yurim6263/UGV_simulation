@@ -1,17 +1,24 @@
 import { useEffect, useMemo } from "react";
-import L from "leaflet";
-import { CircleMarker, ImageOverlay, MapContainer, Marker, Polyline, Tooltip } from "react-leaflet";
+import { ImageOverlay, MapContainer, Marker, Polyline, Tooltip } from "react-leaflet";
 import BaseMap from "./BaseMap";
-import { GRADE_COLOR, TEAM_COLOR, agentLabel, pathAt, stateAt } from "./replayModel";
+import { mannedIcon, headingDeg, startIcon, targetIcon, ugvIcon } from "./mapMarkers";
+import { TEAM_COLOR, TEAM_UNIT, agentLabel, pathAt, stateAt } from "./replayModel";
 
-const dotIcon = (color) => L.divIcon({
-  html: `<div class="leaflet-marker-dot" style="background:${color}"></div>`,
-  iconSize: [16, 16], iconAnchor: [8, 8], className: "leaflet-marker-wrapper",
-});
-const starIcon = (color) => L.divIcon({
-  html: `<div class="replay-star" style="color:${color}">★</div>`,
-  iconSize: [24, 24], iconAnchor: [12, 12], className: "leaflet-marker-wrapper",
-});
+const CASING = "#070b10";
+const ALARM = new Set(["SOS_SENSOR", "SOS_MOBILITY", "SOS_WAIT", "BLIND"]);
+
+// 경로: 어두운 테두리 위에 색선을 얹어 위험도 색 위에서도 보이게 한다. 지나온 지 오래된 구간은 옅게 그린다.
+function Route({ path, color, weight, dim }) {
+  const cut = Math.floor(path.length * 0.45);
+  const round = { lineCap: "round", lineJoin: "round" };
+  return (
+    <>
+      <Polyline positions={path} interactive={false} pathOptions={{ color: CASING, weight: weight + 3, opacity: dim ? 0.4 : 0.85, ...round }} />
+      <Polyline positions={path.slice(0, cut + 1)} interactive={false} pathOptions={{ color, weight, opacity: dim ? 0.2 : 0.5, ...round }} />
+      <Polyline positions={path.slice(cut)} interactive={false} pathOptions={{ color, weight, opacity: dim ? 0.4 : 1, ...round }} />
+    </>
+  );
+}
 
 // 지도는 그리기만 한다. 모드·오버레이·시간·제대 필터·선택은 모두 밖(useReplay)에서 온다.
 export default function ReplayMap({ replay, allowedTeams, compact = false }) {
@@ -32,11 +39,18 @@ export default function ReplayMap({ replay, allowedTeams, compact = false }) {
     [model, teams, allowedTeams],
   );
 
+  const drawn = useMemo(
+    () => visible.map(({ agent, i }) => ({ agent, path: pathAt(model, frame, i), s: stateAt(model, frame, i) })),
+    [visible, model, frame],
+  );
+
   const poiOwner = useMemo(() => {
     const owner = {};
     Object.entries(model.kpi.per_team).forEach(([team, v]) => { if (v.poi) owner[v.poi] = team; });
     return owner;
   }, [model]);
+
+  const hasSelection = drawn.some(({ agent }) => agent.id === selected);
 
   return (
     <MapContainer
@@ -52,45 +66,44 @@ export default function ReplayMap({ replay, allowedTeams, compact = false }) {
         interactive={false}
       />
 
-      <Marker position={scenario.start} icon={dotIcon("#e67e22")} interactive={false}>
-        <Tooltip permanent direction="top" offset={[0, -12]}>출발지</Tooltip>
+      <Marker position={scenario.start} icon={startIcon()} interactive={false}>
+        <Tooltip permanent direction="top" offset={[0, -34]}>출발지</Tooltip>
       </Marker>
-      {scenario.pois.map((p) => (
-        <Marker key={p.id} position={[p.lat, p.lon]} icon={dotIcon(TEAM_COLOR[poiOwner[p.id]] ?? "#94a3b8")} interactive={false}>
-          <Tooltip permanent direction="top" offset={[0, -12]}>POI-{p.id}</Tooltip>
-        </Marker>
-      ))}
-
-      {visible.map(({ agent, i }) => {
-        const color = TEAM_COLOR[agent.team];
-        const path = pathAt(model, frame, i);
-        return path.length > 1 ? (
-          <Polyline
-            key={`path-${agent.id}`}
-            positions={path}
-            pathOptions={{ color, weight: agent.kind === "Manned" ? 4 : 3, opacity: 0.9, dashArray: agent.kind === "Manned" ? null : "6,6" }}
-          />
-        ) : null;
+      {scenario.pois.map((p) => {
+        const owner = poiOwner[p.id];
+        return (
+          <Marker key={p.id} position={[p.lat, p.lon]} icon={targetIcon(TEAM_COLOR[owner] ?? "#94a3b8", p.id)} interactive={false}>
+            <Tooltip permanent direction="top" offset={[0, -24]}>목표 {p.id}{owner ? ` · ${TEAM_UNIT[owner]}` : ""}</Tooltip>
+          </Marker>
+        );
       })}
 
-      {visible.map(({ agent, i }) => {
-        const s = stateAt(model, frame, i);
+      {/* UGV 경로를 먼저, 유인기 경로를 위에 그린다. 선택한 UGV 만 굵게 하고 나머지는 흐리게 한다. */}
+      {drawn.filter(({ agent, path }) => agent.kind === "UGV" && path.length > 1).map(({ agent, path }) => {
+        const sel = agent.id === selected;
+        return <Route key={`path-${agent.id}`} path={path} color={TEAM_COLOR[agent.team]} weight={sel ? 4.5 : 2.2} dim={hasSelection && !sel} />;
+      })}
+      {drawn.filter(({ agent, path }) => agent.kind === "Manned" && path.length > 1).map(({ agent, path }) => (
+        <Route key={`path-${agent.id}`} path={path} color={TEAM_COLOR[agent.team]} weight={4} dim={false} />
+      ))}
+
+      {drawn.map(({ agent, path, s }) => {
         if (!s) return null;
         const pos = [s.lat, s.lon];
         const select = { click: () => setSelected(agent.id) };
-        const tip = <Tooltip>{agentLabel(agent)}</Tooltip>;
-        return agent.kind === "Manned" ? (
-          <Marker key={agent.id} position={pos} icon={starIcon(TEAM_COLOR[agent.team])} eventHandlers={select}>{tip}</Marker>
-        ) : (
-          <CircleMarker
-            key={agent.id}
-            center={pos}
-            radius={selected === agent.id ? 9 : 6}
-            pathOptions={{ color: selected === agent.id ? "#fff" : TEAM_COLOR[agent.team], weight: 2, fillColor: GRADE_COLOR[s.grade], fillOpacity: 1 }}
-            eventHandlers={select}
+        const tip = <Tooltip offset={[0, -12]}>{agentLabel(agent)}</Tooltip>;
+        if (agent.kind === "Manned") {
+          const heading = path.length > 1 ? headingDeg(path[path.length - 2], path[path.length - 1]) : 0;
+          return <Marker key={agent.id} position={pos} icon={mannedIcon(TEAM_COLOR[agent.team], heading)} zIndexOffset={300} eventHandlers={select}>{tip}</Marker>;
+        }
+        const sel = agent.id === selected;
+        return (
+          <Marker
+            key={agent.id} position={pos} zIndexOffset={sel ? 500 : 100} eventHandlers={select}
+            icon={ugvIcon(TEAM_COLOR[agent.team], s.grade, { alarm: ALARM.has(s.action), selected: sel })}
           >
             {tip}
-          </CircleMarker>
+          </Marker>
         );
       })}
     </MapContainer>
