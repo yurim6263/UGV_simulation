@@ -2,21 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { assistantStatus, askAssistant, requestSitrep } from "../api";
 
 const SUGGESTIONS = {
-  commander: ["이번 실행에서 SOS는 몇 건이야?", "균형, 정밀, 신속 모드를 비교해줘", "최적화 결과에서 어떤 편성이 좋았어?", "예보 정확도는 어때?"],
-  operator: ["우리 제대 SOS는 몇 건이야?", "우리 제대 SOS는 언제 발생했어?", "예보 정확도는 어때?"],
+  commander: ["이번 실행에서 SOS는 몇 건이야?", "균형, 정밀, 신속 모드를 비교해줘", "최적화 결과에서 어떤 편성이 좋았어?", "한 칸 이동할 때 AP는 어떻게 계산해?"],
+  operator: ["우리 제대 SOS는 몇 건이야?", "우리 제대 SOS는 언제 발생했어?", "UGV가 유인기에서 얼마나 멀어지면 대기해?"],
 };
 
 const SERVER_MODE = { balance: "balanced", explore: "recon", rush: "rapid" };
 const MODE_LABEL = { balance: "균형", explore: "정밀", rush: "신속" };
 
-// 답변 속 [E1] 을 근거 칩으로 바꾼다. 누르면 해당 도구 결과가 펼쳐진다.
+// 답변 속 [E1] 은 근거 칩으로, **굵게** 는 굵은 글씨로 바꾼다. 누르면 해당 도구 결과가 펼쳐진다.
+function Rich({ text }) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (/^\*\*[^*]+\*\*$/.test(part) ? <strong key={i}>{part.slice(2, -2)}</strong> : part));
+}
+
 function Answer({ text, onCite }) {
   const parts = text.split(/(\[E\d+\])/g);
   return (
     <p className="ai-text">
       {parts.map((part, i) => {
         const m = /^\[(E\d+)\]$/.exec(part);
-        return m ? <button key={i} className="cite" onClick={() => onCite(m[1])}>{m[1]}</button> : part;
+        return m ? <button key={i} className="cite" onClick={() => onCite(m[1])}>{m[1]}</button> : <Rich key={i} text={part} />;
       })}
     </p>
   );

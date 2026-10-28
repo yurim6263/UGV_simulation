@@ -60,6 +60,7 @@ class RuleBasedModel:
     name = "rule-based"
 
     ROUTES = [
+        (("규칙", "공식", "교범", "목줄", "확률", "어떻게 계산", "얼마나 멀어", "뜻이", "정의", "비용은"), "search_docs"),
         (("최적화", "파레토", "전술 메뉴", "편성"), "get_optimization_results"),
         (("예보", "정확도", "지속성"), "get_forecast_quality"),
         (("모드 비교", "모드별", "균형", "정밀", "신속"), "compare_modes"),
@@ -79,7 +80,7 @@ class RuleBasedModel:
             return ModelTurn(tool_calls=[ToolCall("get_run_summary", {"mode": mode}), ToolCall("get_run_events", {"mode": mode, "kind": "all", "limit": 5})])
         for keywords, tool in self.ROUTES:
             if any(k in question for k in keywords):
-                args = {"report": "queue_by_turn"} if tool == "run_sql_analysis" else {}
+                args = {"report": "queue_by_turn"} if tool == "run_sql_analysis" else {"query": question} if tool == "search_docs" else {}
                 # 보이지 않는 도구라도 일부러 호출해 본다: 권한이 실행 단계에서도 막히는지 평가하기 위해서다.
                 return ModelTurn(tool_calls=[ToolCall(tool, args)])
         return ModelTurn(text="이 도구들로는 답할 수 없는 질문입니다.")
@@ -119,6 +120,11 @@ class RuleBasedModel:
             return "; ".join(parts) + ". 구간이 겹치는 비교는 단정할 수 없습니다."
         if call.name == "get_forecast_quality":
             return f"예보의 평균 skill은 {data['mean_skill']:.2f}로 지속성보다 낮습니다 [{eid}]."
+        if call.name == "search_docs":
+            if not data["results"]:
+                return f"문서에서 찾을 수 없습니다. 문서에 없는 내용입니다 [{eid}]."
+            top = data["results"][0]
+            return f"{top['text']} (출처: {top['title']} / {top['heading']}) [{eid}]"
         if call.name == "compare_modes":
             parts = [f"{r['mode']} 모드 작전 시간 {r['mission_minutes']}분, SOS {r['sos_events']}건" for r in data["modes"]]
             return "; ".join(parts) + f" [{eid}]. 모드별 1회 실행 기록입니다."

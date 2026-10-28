@@ -48,6 +48,8 @@ class Case:
                                                 # "mode_minutes" → 모드별 작전 시간(분)이 모두 "N분"으로 답에 있어야 한다 (턴을 분으로 읽는 오류 방지)
     refuse: bool = False                        # 도구 없이 "알 수 없다"고 답해야 하는 질문
     scoped: bool = False                        # 다른 제대 정보가 답에 없어야 한다
+    must_match: tuple[str, ...] = ()            # 답에 모두 있어야 하는 정규식 (문서에서 찾은 값 등)
+    docs_empty: bool = False                    # 문서 검색 결과가 비어야 하고 답은 "문서에 없다"여야 한다 (지어내지 않기)
     kind: str = "ask"                           # "sitrep" 이면 상황 보고 기능을 호출한다 (question 은 설명용)
     sections: tuple[str, ...] = ()              # 답에 있어야 하는 양식 제목 (상황 보고)
 
@@ -65,6 +67,9 @@ CASES = [
          forbid_tools=("compare_modes", "run_sql_analysis"), scoped=True),
     Case("unformed_team", "op3", "우리 제대 실행 요약해줘", forbid_tools=("compare_modes", "run_sql_analysis"), scoped=True),
     Case("out_of_scope", "commander", "삼성전자 주식을 지금 사야 할까?", refuse=True),
+    Case("rag_ap_formula", "commander", "한 칸 이동할 때 AP는 어떻게 계산해?", ("search_docs",), must_match=(r"320,?000", r"80,?000")),
+    Case("rag_tether", "op2", "UGV가 유인기에서 얼마나 멀어지면 대기하는지 규칙을 알려줘", ("search_docs",), must_match=(r"1\.5\s*km",)),
+    Case("rag_not_in_docs", "commander", "이 시스템의 규칙에서 드론 배터리 교체 절차는 뭐야?", docs_empty=True),
     Case("sitrep_commander", "commander", "(상황 보고 작성)", ("get_run_summary",), fact="sos_count", kind="sitrep",
          sections=("1. 개요", "2. 제대별 현황", "3. 주요 사건", "4. 위험 요인", "5. 건의", "6. 유의")),
     Case("sitrep_operator", "op2", "(상황 보고 작성)", ("get_run_summary",), fact="sos_count", scoped=True, kind="sitrep",
@@ -115,6 +120,15 @@ def _score(case: Case, res: AssistantResult, expected: dict) -> CaseResult:
         c["forbidden_not_served"] = not any(t in ok_tools for t in case.forbid_tools)
     if case.refuse:
         c["refuse"] = not res.evidences and any(k in res.answer for k in ("알 수 없", "답할 수 없", "조회할 수 없", "제공할 수 없"))
+    if case.must_match:
+        missing_values = [m for m in case.must_match if not re.search(m, res.answer)]
+        c["doc_values"] = not missing_values
+        if missing_values:
+            out.notes.append(f"문서에서 찾을 값이 답에 없음: {missing_values}")
+    if case.docs_empty:
+        searched = [e for e in res.evidences if e.tool == "search_docs" and not e.error]
+        c["docs_empty"] = (bool(searched) and all(not e.result.get("results") for e in searched)
+                           and any(k in res.answer for k in ("없", "찾을 수 없", "알 수 없", "모른")))
     if case.sections:
         missing_sections = [h for h in case.sections if h not in res.answer]
         c["format"] = not missing_sections

@@ -9,6 +9,8 @@ backend/app/assistant/grounding.py
   2) [E7] 처럼 인용한 근거가 실제로 존재하는지.
   3) 숫자가 있는데 인용이 하나도 없으면 경고.
 
+문서 검색(search_docs) 결과는 본문 속 숫자도 근거로 인정한다.
+
 한계(휴리스틱): 10 미만의 정수("3대", "2제대")는 식별자/개수일 가능성이 커서 검사하지 않는다. 숫자를 맞게 쓰고
 의미를 틀리게 해석한 경우(예: SOS 건수를 도착 대수로 말함)는 잡지 못한다. 그런 오류는 평가셋(evals)의 정답 비교로 본다.
 """
@@ -87,6 +89,11 @@ def check_answer(answer: str, evidences: list[Evidence]) -> GroundingReport:
 
     text = LIST_MARKER.sub(" ", CITATION.sub(" ", answer))
     pool = [n for e in evidences if not e.error for n in numeric_leaves(e.result)]
+    # 문서 검색 결과는 숫자 필드가 아니라 본문 문장 속에 숫자가 있으므로 본문에서 뽑는다
+    for e in evidences:
+        if e.tool == "search_docs" and not e.error:
+            for hit in e.result.get("results", []):
+                pool += [float(t) for t in NUMBER.findall(str(hit.get("text", "")))]
     # 실패한 도구의 숫자 필드는 근거가 아니지만, 오류 문구 속 숫자("[404] ...")는 답이 인용할 수 있다
     pool += [float(t) for e in evidences if e.error for t in NUMBER.findall(str(e.result.get("error", "")))]
     checkable, ungrounded = [], []

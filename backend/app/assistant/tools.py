@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.analysis.sql_reports import QUERIES, mode_comparison, run_report
+from app.assistant.knowledge import default_index
 from app.assistant.schema import Evidence, ToolCall, ToolContext, ToolError, ToolSpec
 from app.db.models.simulation_run import SimulationRun
 from app.services.run_data import COMMANDER_ROLES, MODE_OF, RunDataError, build_run_mode, load_run_data
@@ -205,6 +206,24 @@ async def get_forecast_quality(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+DOC_TEXT_LIMIT = 650
+
+
+async def search_docs(ctx: ToolContext, args: dict) -> dict:
+    query = str(args.get("query", "")).strip()
+    if not query:
+        raise ToolError("'query' 에 찾을 내용을 적어야 합니다.")
+    k = min(_opt_int(args, "k") or 3, 5)
+    hits = default_index().search(query[:200], k)
+    return {
+        "query": query[:200],
+        "results": [{"source": c.source, "title": c.title, "heading": c.heading, "text": c.text[:DOC_TEXT_LIMIT], "score": round(score, 2)}
+                    for c, score in hits],
+        "note": ("문서는 이 시스템의 운용 규칙과 분석 보고서다 (실제 군 교범이 아님). 결과가 비어 있으면 문서에 없는 내용이다."
+                 if hits else "관련 문서를 찾지 못했다. 문서에 없는 내용이므로 지어내지 말고 모른다고 답한다."),
+    }
+
+
 # ── 레지스트리 ───────────────────────────────────────────────────────────
 
 _RUN_ARGS = {
@@ -232,6 +251,11 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("get_optimization_results", "NSGA-II 최적화 결과: 신속/정밀/균형 전술의 편성과 몬테카를로 검증 성능(평균 ± 95% 신뢰구간)을 기준 전술과 비교. "
              "통계적으로 말할 수 있는 것과 없는 것을 구분하려면 반드시 이 도구의 신뢰구간을 쓴다.",
              {"type": "object", "properties": {}}, BOTH, get_optimization_results),
+    ToolSpec("search_docs", "시스템 운용 규칙과 분석 문서를 검색한다 (AP 계산식, 사고 확률, 운용자 개입 비용, 목줄 거리, 위험 등급의 뜻, 최적화 방법 등 "
+             "'규칙·정의·공식·방법'에 관한 질문). 실행 기록의 숫자는 이 도구가 아니라 run 도구들로 조회한다.",
+             {"type": "object", "properties": {"query": {"type": "string", "description": "찾을 내용 (한국어 키워드, 예: 'AP 계산식', '유인기 대기 거리')"},
+                                               "k": {"type": "integer", "description": "결과 개수 (기본 3, 최대 5)"}},
+              "required": ["query"]}, BOTH, search_docs),
     ToolSpec("get_forecast_quality", "저장소 위험도 예보의 정확도(리드타임별 오차와 지속성 기준선 대비 skill).",
              {"type": "object", "properties": {}}, BOTH, get_forecast_quality),
 ]}
