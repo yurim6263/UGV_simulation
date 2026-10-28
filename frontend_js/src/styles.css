@@ -98,6 +98,12 @@ button.team:hover { border-color: var(--line2); }
 .legend b { display: block; margin-bottom: 6px; font-size: 11px; color: var(--text); }
 .legend small { display: block; margin-top: 8px; font-size: 10.5px; color: var(--muted); }
 .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legend .help-btn { width: 16px; height: 16px; margin-left: 6px; padding: 0; border: 1px solid var(--line2); border-radius: 50%; background: transparent; color: var(--soft); font-size: 10px; line-height: 1; cursor: pointer; vertical-align: middle; }
+.legend .help-btn[aria-expanded="true"] { background: var(--text); color: var(--bg); }
+.legend .legend-help { max-width: 230px; margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: var(--soft); }
+.legend .legend-help b { display: inline; margin: 0; font-size: inherit; }
+.legend .legend-toggle { margin-top: 10px; padding: 6px 8px; font-size: 11px; }
+.legend .legend-toggle.off { color: var(--muted); }
 .turn { position: absolute; z-index: 900; right: 16px; top: 16px; padding: 10px 14px; border: 1px solid var(--line2); border-radius: 10px; background: #0e151dd9; text-align: right; }
 .turn small { display: block; font-size: 11px; color: var(--muted); }
 .turn b { font-size: 20px; font-weight: 500; }

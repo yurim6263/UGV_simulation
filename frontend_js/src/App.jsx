@@ -45,14 +45,28 @@ function Brand({ sub }) {
   );
 }
 
-function RiskLegend() {
+// showRisk/onToggleRisk 를 주면 지도의 위험등급 색칠을 켜고 끄는 버튼이 붙는다 (입력 지도용)
+function RiskLegend({ showRisk, onToggleRisk }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="legend">
-      <b>상대 위험 등급</b>
-      <div><i style={{ background: GRADE_COLOR.G }} />G 하위 30% (옅게)</div>
-      <div><i style={{ background: GRADE_COLOR.A }} />A 중간 40%</div>
-      <div><i style={{ background: GRADE_COLOR.R }} />R 상위 30%</div>
+      <b>상대 위험 등급 <button className="help-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="등급 설명 펼치기">?</button></b>
+      <div><i style={{ background: GRADE_COLOR.G }} />G 하위 30% · 안전 (옅게)</div>
+      <div><i style={{ background: GRADE_COLOR.A }} />A 중간 40% · 주의</div>
+      <div><i style={{ background: GRADE_COLOR.R }} />R 상위 30% · 위험</div>
       <small>전 시간대 기준 순위 · 날씨 강도와 무관</small>
+      {open && (
+        <p className="legend-help">
+          G·A·R은 작전 구역의 모든 칸과 모든 시각의 위험도를 한 줄로 세워서 나눈 <b>상대 순위</b>입니다.
+          비가 더 많이 와도 R이 늘어나지 않고, 모든 칸이 같이 위험해지면 그중 높은 쪽이 R이 됩니다.
+          실제 위험의 크기는 등급이 아니라 <b>평균 위험도(0~1)</b> 값에서 확인하세요.
+        </p>
+      )}
+      {onToggleRisk && (
+        <button className={`btn block legend-toggle ${showRisk ? "" : "off"}`} onClick={onToggleRisk} aria-pressed={showRisk}>
+          {showRisk ? "위험등급 색칠 숨기기" : "위험등급 색칠 보이기"}
+        </button>
+      )}
     </div>
   );
 }
@@ -133,12 +147,12 @@ function LoginPage({ onLogin }) {
 
 const validPoint = (t) => Number.isFinite(Number(t.lat)) && Number.isFinite(Number(t.lng)) && t.lat !== "" && t.lng !== "";
 
-function InputMap({ targets }) {
+function InputMap({ targets, showRisk }) {
   return (
     <MapContainer bounds={MAP_BOUNDS} boundsOptions={{ padding: [4, 4] }} zoomControl attributionControl={false} zoomSnap={0.1} zoomDelta={0.5}>
       <BaseMap />
       <ImageOverlay url={`${API_URL}/api/map/tactical/terrain-image`} bounds={MAP_BOUNDS} opacity={0.55} />
-      <ImageOverlay url={`${API_URL}/api/map/tactical/cost-image?layer=risk`} bounds={MAP_BOUNDS} opacity={0.6} />
+      {showRisk && <ImageOverlay url={`${API_URL}/api/map/tactical/cost-image?layer=risk`} bounds={MAP_BOUNDS} opacity={0.6} />}
       <Marker position={[54.48, 18.32]} icon={startIcon()} interactive={false}>
         <Tooltip permanent direction="top" offset={[0, Math.round(-34 * ICON_SCALE)]}>출발지</Tooltip>
       </Marker>
@@ -211,6 +225,7 @@ function MissionTextBox({ targets, setTargets }) {
 
 function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }) {
   const update = (key, field, value) => setTargets((current) => ({ ...current, [key]: { ...current[key], [field]: value } }));
+  const [showRisk, setShowRisk] = useState(true);
   return (
     <main className="app">
       <header className="top">
@@ -219,9 +234,9 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
       </header>
       <div className="body two">
         <section className="stage">
-          <div className="map-fill"><InputMap targets={targets} /></div>
-          <div className="map-legend-pos"><RiskLegend /></div>
-          <div className="tip">입력한 좌표가 번호 핀으로 표시됩니다. 배경은 시작 시각의 위험도입니다.</div>
+          <div className="map-fill"><InputMap targets={targets} showRisk={showRisk} /></div>
+          <div className="map-legend-pos"><RiskLegend showRisk={showRisk} onToggleRisk={() => setShowRisk(!showRisk)} /></div>
+          <div className="tip">입력한 좌표가 번호 핀으로 표시됩니다. 배경은 시작 시각의 위험도이고, 오른쪽 버튼으로 색칠을 숨길 수 있습니다(지형은 그대로).</div>
         </section>
         <aside className="side">
           <MissionTextBox targets={targets} setTargets={setTargets} />
