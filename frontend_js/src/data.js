@@ -1,10 +1,12 @@
 // 계정은 서버(DB)가 관리한다. 여기에는 화면 표시용 기본값만 둔다.
 // 목표 좌표 기본값: 팀원 시뮬레이션의 정찰지 3곳 (작전 구역 안). 정찰 시간은 분 단위.
-export const initialTargets = {
-  user1: { title: "도착지1", lat: "54.40", lng: "18.54", recon: "30" },
-  user2: { title: "도착지2", lat: "54.33", lng: "18.36", recon: "30" },
-  user3: { title: "도착지3", lat: "54.37", lng: "18.50", recon: "30" },
-};
+// 목표는 1~3곳이고, 순서대로 1제대, 2제대, 3제대가 맡는다.
+export const MAX_TARGETS = 3;
+export const initialTargets = [
+  { lat: "54.40", lng: "18.54", recon: "30" },
+  { lat: "54.33", lng: "18.36", recon: "30" },
+  { lat: "54.37", lng: "18.50", recon: "30" },
+];
 
 export const units = [
   { key: "user1", name: "1제대", color: "#4d8dff", success: 78, risk: 35, depart: "02:20:00", arrive: "05:20:00" },

@@ -10,6 +10,7 @@ export function useReplay() {
   const [scenario, setScenario] = useState(null);
   const [models, setModels] = useState(null);
   const [error, setError] = useState("");
+  const [unassigned, setUnassigned] = useState(false);   // 이 계정의 제대가 이번 임무에 편성되지 않음
 
   const [mode, setModeState] = useState("balance");
   const [overlay, setOverlay] = useState("total");
@@ -24,6 +25,7 @@ export function useReplay() {
     setScenario(null);
     setModels(null);
     setError("");
+    setUnassigned(false);
     setFrame(0);
     setPlaying(false);
     setSelected(null);
@@ -35,7 +37,9 @@ export function useReplay() {
         setModels(Object.fromEntries(raws.map((r) => [r.mode, buildReplay(r)])));
         setModeState((current) => (raws.some((r) => r.mode === current) ? current : raws[0].mode));
       } catch (e) {
-        if (!cancelled) setError(`재생 데이터를 불러오지 못했습니다: ${e.message}`);
+        if (cancelled) return;
+        if (e.unassigned) setUnassigned(true);
+        else setError(`재생 데이터를 불러오지 못했습니다: ${e.message}`);
       }
     })();
     return () => { cancelled = true; };
@@ -82,9 +86,9 @@ export function useReplay() {
   const toggleTeam = useCallback((team) => setTeams((t) => ({ ...t, [team]: !t[team] })), []);
 
   return useMemo(() => ({
-    overlayUrl, scenario, models, model, error, loading: !error && !model,
+    overlayUrl, scenario, models, model, error, unassigned, loading: !error && !unassigned && !model,
     mode, setMode, overlay, setOverlay, frame, seek, lastFrame,
     playing, setPlaying, togglePlay, speed, setSpeed,
     teams, toggleTeam, selected, setSelected,
-  }), [overlayUrl, scenario, models, model, error, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
+  }), [overlayUrl, scenario, models, model, error, unassigned, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
 }

@@ -121,7 +121,14 @@ export async function waitForRuns(onProgress, { intervalMs = 1000, timeoutMs = 3
 export async function fetchServerReplay() {
   const set = await latestRunSet();
   if (!set.all_completed) throw new ApiError(409, "시뮬레이션이 아직 끝나지 않았습니다.");
-  const replays = await Promise.all(set.runs.map((r) => request(`/api/runs/${r.id}/replay`)));
+  let replays;
+  try {
+    replays = await Promise.all(set.runs.map((r) => request(`/api/runs/${r.id}/replay`)));
+  } catch (e) {
+    // 목표가 3곳보다 적으면 뒤쪽 제대는 편성되지 않아 서버가 404("제대의 기록이 없습니다")로 답한다. 오류가 아니라 "배정 없음"이다.
+    if (e.status === 404 && e.message.includes("제대의 기록이 없습니다")) e.unassigned = true;
+    throw e;
+  }
   const scenario = {
     ...replays[0].scenario,
     mission_id: set.mission_id,

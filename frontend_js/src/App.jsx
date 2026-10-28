@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
 import { API_URL, assistantStatus, clearToken, createMission, draftMission, latestRunSet, login as apiLogin, planFormation, startRuns, waitForRuns } from "./api";
-import { initialTargets, units } from "./data";
+import { MAX_TARGETS, initialTargets, units } from "./data";
 import { useReplay } from "./replay/useReplay";
 import BaseMap from "./replay/BaseMap";
 import ReplayMap from "./replay/ReplayMap";
@@ -146,8 +146,37 @@ function LoginPage({ onLogin }) {
 // ── 지휘관 목표 입력 ─────────────────────────────────────────────────────
 
 const validPoint = (t) => Number.isFinite(Number(t.lat)) && Number.isFinite(Number(t.lng)) && t.lat !== "" && t.lng !== "";
+// 작전 구역(서버 SimAlgoConfig.bounds 와 같다). 목표는 이 안에 있어야 한다.
+const AREA = { minLat: 54.3006, maxLat: 54.5198, minLng: 18.2674, maxLng: 18.6444 };
+const inArea = (lat, lng) => lat >= AREA.minLat && lat <= AREA.maxLat && lng >= AREA.minLng && lng <= AREA.maxLng;
+const AREA_TEXT = `위도 ${AREA.minLat}~${AREA.maxLat}, 경도 ${AREA.minLng}~${AREA.maxLng}`;
 
-function InputMap({ targets, showRisk }) {
+// 끌어서 옮기는 목표 마커. 작전 구역 밖에 놓으면 원래 자리로 돌려놓는다.
+function DragTarget({ index, target, onMove, onOut }) {
+  const ref = useRef(null);
+  const latest = useRef(target);
+  latest.current = target;
+  const handlers = useMemo(() => ({
+    dragend() {
+      const marker = ref.current;
+      if (!marker) return;
+      const { lat, lng } = marker.getLatLng();
+      if (inArea(lat, lng)) {
+        onMove(index, lat, lng);
+      } else {
+        marker.setLatLng([Number(latest.current.lat), Number(latest.current.lng)]);
+        onOut();
+      }
+    },
+  }), [index, onMove, onOut]);
+  return (
+    <Marker ref={ref} draggable position={[Number(target.lat), Number(target.lng)]} icon={targetIcon(TEAM_COLOR[TEAM_ORDER[index]], index + 1)} eventHandlers={handlers} zIndexOffset={400}>
+      <Tooltip direction="top" offset={[0, Math.round(-24 * ICON_SCALE)]}>{index + 1}제대 목표 · 끌어서 옮기기</Tooltip>
+    </Marker>
+  );
+}
+
+function InputMap({ targets, showRisk, onMove, onOut }) {
   return (
     <MapContainer bounds={MAP_BOUNDS} boundsOptions={{ padding: [4, 4] }} zoomControl attributionControl={false} zoomSnap={0.1} zoomDelta={0.5}>
       <BaseMap />
@@ -156,9 +185,7 @@ function InputMap({ targets, showRisk }) {
       <Marker position={[54.48, 18.32]} icon={startIcon()} interactive={false}>
         <Tooltip permanent direction="top" offset={[0, Math.round(-34 * ICON_SCALE)]}>출발지</Tooltip>
       </Marker>
-      {Object.entries(targets).filter(([, t]) => validPoint(t)).map(([key, t], i) => (
-        <Marker key={key} position={[Number(t.lat), Number(t.lng)]} icon={targetIcon(TEAM_COLOR[USER_TEAM[key]], i + 1)} interactive={false} />
-      ))}
+      {targets.map((t, i) => validPoint(t) && <DragTarget key={i} index={i} target={t} onMove={onMove} onOut={onOut} />)}
     </MapContainer>
   );
 }
@@ -177,14 +204,13 @@ function MissionTextBox({ targets, setTargets }) {
     setNote(null);
     try {
       const draft = await draftMission(text.trim());
-      const keys = Object.keys(targets);
       setTargets((cur) => {
-        const next = { ...cur };
+        const next = [...cur];
         draft.targets.forEach((t) => {
-          const key = keys[t.team - 1];          // 제대 번호대로 채운다 (건너뛴 제대는 그대로 둔다)
-          if (key) next[key] = { ...cur[key], lat: String(t.lat), lng: String(t.lon), recon: String(t.recon_min) };
+          const i = t.team - 1;                  // 제대 번호대로 채운다 (건너뛴 제대는 그대로 둔다)
+          if (i >= 0 && i < MAX_TARGETS) next[i] = { lat: String(t.lat), lng: String(t.lon), recon: String(t.recon_min) };
         });
-        return next;
+        return Array.from({ length: next.length }, (_, i) => next[i] ?? initialTargets[i]);   // 빈 자리는 기본 목표로 메운다
       });
       setNote({ assumptions: draft.assumptions, teams: draft.targets.map((t) => t.team).sort() });
     } catch (e) {
@@ -224,8 +250,44 @@ function MissionTextBox({ targets, setTargets }) {
 }
 
 function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }) {
-  const update = (key, field, value) => setTargets((current) => ({ ...current, [key]: { ...current[key], [field]: value } }));
+  const update = (i, field, value) => setTargets((current) => current.map((t, k) => (k === i ? { ...t, [field]: value } : t)));
   const [showRisk, setShowRisk] = useState(true);
+  const [message, setMessage] = useState("");              // 지도 안내 문구 (작전 구역 밖으로 끌었을 때 등)
+  const timer = useRef(null);
+  const say = (text) => {
+    setMessage(text);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setMessage(""), 4000);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const [formError, setFormError] = useState("");
+
+  // 지도에서 끌어 놓은 위치를 입력칸에 반영한다 (입력칸을 고치면 마커가 따라 움직인다: 같은 상태를 공유)
+  const move = useCallback((i, lat, lng) => {
+    setFormError("");
+    setTargets((current) => current.map((t, k) => (k === i ? { ...t, lat: lat.toFixed(5), lng: lng.toFixed(5) } : t)));
+  }, [setTargets]);
+  const outOfArea = useCallback(() => say(`작전 구역 밖입니다. 원래 위치로 되돌렸습니다. (${AREA_TEXT})`), []);
+  const add = () => {
+    if (targets.length >= MAX_TARGETS) return;
+    const base = initialTargets[targets.length];
+    setTargets((current) => [...current, { ...base }]);
+    say(`${targets.length + 1}제대 목표를 추가했습니다. 지도에서 끌어 위치를 정하세요.`);
+  };
+  const remove = (i) => {
+    if (targets.length <= 1) return;
+    setTargets((current) => current.filter((_, k) => k !== i));
+  };
+
+  function submit() {
+    const bad = targets.findIndex((t) => !validPoint(t) || !inArea(Number(t.lat), Number(t.lng)));
+    if (bad >= 0) return setFormError(`${bad + 1}제대 목표가 비었거나 작전 구역 밖입니다. (${AREA_TEXT})`);
+    setFormError("");
+    onSubmit();
+  }
+
+  const n = targets.length;
+  const used = n * 3;                                       // 제대당 UGV 최대 3대
   return (
     <main className="app">
       <header className="top">
@@ -234,27 +296,36 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
       </header>
       <div className="body two">
         <section className="stage">
-          <div className="map-fill"><InputMap targets={targets} showRisk={showRisk} /></div>
+          <div className="map-fill"><InputMap targets={targets} showRisk={showRisk} onMove={move} onOut={outOfArea} /></div>
           <div className="map-legend-pos"><RiskLegend showRisk={showRisk} onToggleRisk={() => setShowRisk(!showRisk)} /></div>
-          <div className="tip">입력한 좌표가 번호 핀으로 표시됩니다. 배경은 시작 시각의 위험도이고, 오른쪽 버튼으로 색칠을 숨길 수 있습니다(지형은 그대로).</div>
+          <div className={`tip ${message ? "warn" : ""}`} role="status">{message || "번호 핀을 끌어서 목표 위치를 정하세요. 입력칸과 서로 연동됩니다. 배경은 시작 시각의 위험도이고, 오른쪽 버튼으로 색칠을 숨길 수 있습니다(지형은 그대로)."}</div>
         </section>
         <aside className="side">
           <MissionTextBox targets={targets} setTargets={setTargets} />
           <section>
-            <h2 className="h">정찰 목표</h2>
+            <h2 className="h">정찰 목표 <small className="beta">{n}곳 · 최대 {MAX_TARGETS}곳</small></h2>
             <div className="card">
-              {Object.entries(targets).map(([key, t], i) => (
-                <div className="tgt" key={key}>
-                  <span className="no" style={{ background: TEAM_COLOR[USER_TEAM[key]] }}>{i + 1}</span>
-                  <label className="f"><small>위도</small><input value={t.lat} onChange={(e) => update(key, "lat", e.target.value)} inputMode="decimal" aria-label={`${t.title} 위도`} /></label>
-                  <label className="f"><small>경도</small><input value={t.lng} onChange={(e) => update(key, "lng", e.target.value)} inputMode="decimal" aria-label={`${t.title} 경도`} /></label>
-                  <label className="f"><small>정찰(분)</small><input value={t.recon} onChange={(e) => update(key, "recon", e.target.value)} inputMode="numeric" aria-label={`${t.title} 정찰 시간`} /></label>
+              {targets.map((t, i) => (
+                <div className="tgt" key={i}>
+                  <span className="no" style={{ background: TEAM_COLOR[TEAM_ORDER[i]] }}>{i + 1}</span>
+                  <label className="f"><small>위도</small><input value={t.lat} onChange={(e) => update(i, "lat", e.target.value)} inputMode="decimal" aria-label={`${i + 1}제대 목표 위도`} /></label>
+                  <label className="f"><small>경도</small><input value={t.lng} onChange={(e) => update(i, "lng", e.target.value)} inputMode="decimal" aria-label={`${i + 1}제대 목표 경도`} /></label>
+                  <label className="f"><small>정찰(분)</small><input value={t.recon} onChange={(e) => update(i, "recon", e.target.value)} inputMode="numeric" aria-label={`${i + 1}제대 정찰 시간`} /></label>
+                  <button className="icon-btn sm" onClick={() => remove(i)} disabled={n <= 1} aria-label={`${i + 1}제대 목표 삭제`} title={n <= 1 ? "목표는 최소 1곳" : "이 목표 삭제"}>×</button>
                 </div>
               ))}
+              <button className="btn block" onClick={add} disabled={n >= MAX_TARGETS}>+ 목표 추가</button>
+              {n < MAX_TARGETS && (
+                <p className="hint">
+                  목표 {n}곳이면 {n}개 제대만 출동합니다 (제대당 UGV 최대 3대, 최대 {used}대 투입).
+                  보유 9대 중 {9 - used}대는 쓰지 않고, {Array.from({ length: MAX_TARGETS - n }, (_, k) => `${n + k + 1}제대`).join("·")}는 이번 임무에 배정이 없습니다.
+                </p>
+              )}
             </div>
           </section>
           <p className="hint nomargin">실행하면 먼저 목표 위치에 맞게 제대별 UGV 투입 대수(1~3대, 보유 9대)를 계산한 뒤, 균형·정밀·신속 3가지 모드를 시뮬레이션합니다. 목표는 작전 구역(그단스크 인근) 안이어야 합니다.</p>
-          <button className="btn primary block big" onClick={onSubmit}>시뮬레이션 실행</button>
+          {formError && <p className="form-error" role="alert">{formError}</p>}
+          <button className="btn primary block big" onClick={submit}>시뮬레이션 실행</button>
         </aside>
       </div>
     </main>
@@ -282,11 +353,11 @@ function LaunchPage({ targets, onDone, onBack }) {
     started.current = true;
     (async () => {
       try {
-        const parsed = Object.values(targets).map((t) => ({
+        const parsed = targets.map((t) => ({
           lat: Number(t.lat), lon: Number(t.lng), patrolSec: Math.max(0, Number(t.recon || 0)) * 60,
         }));
         if (parsed.some((t) => !Number.isFinite(t.lat) || !Number.isFinite(t.lon) || t.lat === 0 || t.lon === 0)) {
-          throw new Error("세 목표의 위도와 경도를 모두 숫자로 입력하세요.");
+          throw new Error("목표의 위도와 경도를 모두 숫자로 입력하세요.");
         }
         const missionId = await createMission({ targets: parsed });
         if (!mounted.current) return;
@@ -500,7 +571,8 @@ function UserMissionPage({ account, onConfirm, onLogout }) {
   const pt = model?.kpi.per_team[team];
   const poi = pt?.poi ? replay.scenario?.pois.find((p) => p.id === pt.poi) : null;
   const dash = (v) => (v === null || v === undefined ? "-" : v);
-  const launchTurn = model && team ? teamLaunchTurn(model, team) : null;
+  const unassigned = replay.unassigned;                  // 목표가 3곳보다 적으면 뒤쪽 제대는 출동하지 않는다
+  const launchTurn = model && team && pt ? teamLaunchTurn(model, team) : null;
   const startIso = replay.scenario?.start_time;
   return (
     <main className="app">
@@ -514,6 +586,7 @@ function UserMissionPage({ account, onConfirm, onLogout }) {
           {team && <span className="team-tag" style={{ borderColor: TEAM_COLOR[team], color: TEAM_COLOR[team] }}><i style={{ background: TEAM_COLOR[team] }} />담당 제대 · {team}</span>}
         </div>
         {replay.error && <p className="form-error" role="alert">{replay.error}</p>}
+        {unassigned && <p className="unassigned" role="status"><b>배정 없음</b> 이번 임무에서 {unit?.name ?? account.unit}는 출동하지 않습니다. 지휘관이 목표를 3곳보다 적게 입력했습니다.</p>}
         <div className="brief-cols">
           <section className="card"><h2 className="h">{account.unit} 자산 현황</h2>
             <p className="kv"><span>통제관 수</span><b className="num">1</b></p>
