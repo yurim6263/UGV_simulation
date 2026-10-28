@@ -16,7 +16,7 @@ backend/app/core/config.py
     JWT_ALGORITHM=HS256               (기본값)
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60 (기본값)
     GEMINI_API_KEY=<Google AI Studio 키>   (없으면 AI 어시스턴트 비활성)
-    GEMINI_MODEL=gemini-2.5-flash          (기본값)
+    GEMINI_MODEL=gemini-3.8-flash          (기본값)
 """
 
 import sys
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # LLM 어시스턴트 (Gemini). 키가 없으면 어시스턴트 API 는 503 을 돌려주고 나머지 기능은 그대로 동작한다.
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"      # 모델 이름은 계정/시점에 따라 달라질 수 있어 환경변수로 바꾼다
+    gemini_model: str = "gemini-3.8-flash"      # 모델 이름은 계정/시점에 따라 달라질 수 있어 환경변수로 바꾼다
     assistant_rate_limit: str = "20/minute"
 
     @property

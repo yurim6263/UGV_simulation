@@ -84,8 +84,15 @@ async def main(args) -> int:
 
     print("임시 DB에 실행 기록을 만드는 중...", flush=True)
     run_id = await build_runs()
+    from app.assistant.schema import ModelError
+
     async with AsyncSessionLocal() as db:
-        results = await run_eval(model, db, run_id)
+        try:
+            results = await run_eval(model, db, run_id)
+        except ModelError as exc:
+            print(f"\n모델 호출 실패: {exc}", file=sys.stderr)
+            print("모델 이름 문제라면 backend/.env 의 GEMINI_MODEL 을 AI Studio 에 보이는 이름으로 바꾸세요.", file=sys.stderr)
+            return 2
     summary = summarize(results)
 
     print(f"\n모델: {model.name}  |  통과 {summary['passed']}/{summary['cases']}")

@@ -43,7 +43,7 @@
 
 ```
 GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.5-flash      # 계정에서 쓸 수 있는 모델 이름으로 바꾼다
+GEMINI_MODEL=gemini-3.8-flash      # 계정에서 쓸 수 있는 모델 이름으로 바꾼다
 ```
 
 키가 없으면 `ask`는 503, `status`는 `enabled: false`이고 나머지 기능은 그대로 동작한다.
