@@ -10,7 +10,7 @@ LTWR(Land Tactical Weather Risk, 지상 작전 기상 위험도) 생성기. 팀 
   - 팀 노트북의 임계 구간: 강수 0.5(경미), 2(중간), 5(강함, 소프트 회피, "5 mm/h 에서 센서 성능 붕괴 보고"), 8 mm/h(매우 강함, 하드 회피).
   - 안개 확률 식(app/weather/fog.py).
 우리가 정한 것 (가정값, 관측으로 보정하지 않았다)
-  - 변수별 위험 곡선: 위 임계 구간을 기준점으로 단조 PCHIP 곡선 (RAIN_ANCHORS, SOIL_ANCHORS, SNOW_ANCHORS).
+  - 변수별 위험 곡선: 위 임계 구간을 기준점으로 단조 PCHIP 곡선 (app/weather/curves.py).
   - 기동성: 강수, 토양수분(연약지반), 적설의 noisy-OR.  센서: 강수, 안개의 noisy-OR.
   - 지형 보정: 토지 피복별 바탕 위험(BASE_MOB/BASE_SEN)과 젖은 땅 민감도(SOFTNESS), 도로 50m 안이면 젖은 땅 영향 반감.
   - synergy: 강수 x 토양수분(기동), 강수 x 안개(센서) 곱을 더한다 (SYNERGY).
@@ -24,17 +24,13 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from scipy.interpolate import PchipInterpolator, RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator
 
+from app.weather.curves import ANCHORS, RAIN_ANCHORS, SNOW_ANCHORS, SOIL_ANCHORS, curve  # noqa: F401
 from app.weather.fog import fog_probability, wet_3h
 from app.weather.scenario_index import fill_nearest
 
 W_MOB, W_SEN = 0.6, 0.4
-
-RAIN_ANCHORS = ([0, 0.5, 2, 5, 8, 15], [0, 0.10, 0.35, 0.80, 0.97, 1.0])        # mm/h → 0~1 (팀 노트북 임계 구간)
-SOIL_ANCHORS = ([0.0, 0.20, 0.30, 0.40, 0.50, 0.7], [0, 0, 0.2, 0.6, 1.0, 1.0])  # 체적 토양수분 m3/m3 → 0~1 (연약지반)
-SNOW_ANCHORS = ([0, 0.02, 0.10, 0.30, 1.0], [0, 0.2, 0.6, 1.0, 1.0])             # 적설 깊이(수당량) m → 0~1
-_CURVES = {k: PchipInterpolator(*v, extrapolate=False) for k, v in (("rain", RAIN_ANCHORS), ("soil", SOIL_ANCHORS), ("snow", SNOW_ANCHORS))}
 
 W_RAIN_MOB, W_SOIL_MOB, W_SNOW_MOB = 0.70, 0.80, 0.80
 W_RAIN_SEN, W_FOG_SEN = 0.90, 0.90
@@ -45,11 +41,6 @@ BASE_MOB = {10: 0.25, 20: 0.18, 30: 0.10, 40: 0.10, 50: 0.05, 60: 0.15, 70: 0.30
 SOFTNESS = {10: 0.6, 20: 0.7, 30: 0.8, 40: 1.0, 50: 0.3, 60: 0.9, 70: 0.9, 80: 0.0, 90: 1.2, 95: 1.2, 100: 0.8}
 BASE_SEN = {10: 0.15, 20: 0.08, 30: 0.02, 40: 0.02, 50: 0.10, 60: 0.02, 70: 0.05, 80: 0.0, 90: 0.05, 95: 0.10, 100: 0.05}
 DEFAULT_CODE = 40
-
-
-def curve(name: str, x: np.ndarray) -> np.ndarray:
-    lo, hi = {"rain": RAIN_ANCHORS, "soil": SOIL_ANCHORS, "snow": SNOW_ANCHORS}[name][0][0], {"rain": RAIN_ANCHORS, "soil": SOIL_ANCHORS, "snow": SNOW_ANCHORS}[name][0][-1]
-    return np.nan_to_num(_CURVES[name](np.clip(x, lo, hi)), nan=0.0).astype("float32")
 
 
 def _by_code(table: dict, codes: np.ndarray) -> np.ndarray:

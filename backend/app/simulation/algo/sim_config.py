@@ -25,8 +25,8 @@ _BASE = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )))
 
-# 20km 데이터가 들어 있는 폴더 (backend/data 아래 이름, 절대 경로도 가능). map_20km = 팀원이 만든 원본, map_20km_rebuilt = 우리가 직접 만든 것
-MAP20KM_DIR = os.getenv("MAP20KM_DIR", "map_20km")
+# 20km 데이터가 들어 있는 폴더 (backend/data 아래 이름, 절대 경로도 가능). map_20km = 팀원이 만든 원본(2023-06-30 22시 사례), map_20km_rebuilt = 우리가 직접 만든 것(기본, 2022-08-20 22시 사례)
+MAP20KM_DIR = os.getenv("MAP20KM_DIR", "map_20km_rebuilt")
 _MAP20 = os.path.join(_BASE, "data", MAP20KM_DIR)
 
 _DATASETS = {

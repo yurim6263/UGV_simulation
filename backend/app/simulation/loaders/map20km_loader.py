@@ -28,7 +28,7 @@ import pandas as pd
 from app.simulation.terrain import DEFAULT_COST_MULT, LC_COST_MULT
 
 # ── 경로 상수 ─────────────────────────────────────────────
-_BASE_DIR = Path(__file__).resolve().parents[3] / "data" / os.getenv("MAP20KM_DIR", "map_20km")      # sim_config.MAP20KM_DIR 와 같은 폴더
+_BASE_DIR = Path(__file__).resolve().parents[3] / "data" / os.getenv("MAP20KM_DIR", "map_20km_rebuilt")      # sim_config.MAP20KM_DIR 와 같은 폴더
 _STATIC_DIR = _BASE_DIR / "static"
 _TERRAIN_PATH = _STATIC_DIR / "Test_sim_input_200m_bbox_20km.parquet"
 _BUFFER_TIF   = _STATIC_DIR / "route_buffer_mask_5km_200m.tif"

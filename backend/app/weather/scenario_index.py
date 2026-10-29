@@ -5,16 +5,16 @@ backend/app/weather/scenario_index.py
 원시 기상은 ERA5-Land(0.1°, 시간별)에서 온다. 위험도 격자(`normalized_c_total` 등)에는 원시 기상 값이 없다.
 
 이 지표는 **측정값이 아니라 가정이 들어간 추정**이다. 화면과 문서에 같은 한계를 적는다.
-  - 가중치(WEIGHTS)와 각 요인을 0~1로 바꾸는 기준(*_FULL, SOIL_*, FOG_*)은 근거 없는 가정값이다 (보정하지 않았다).
-  - 안개/시정은 ERA5-Land 에 없다. "이슬점 차(t2m - d2m)가 작고 바람이 약하면 안개 가능성이 높다"는 규칙으로 추정한다.
+  - 가중치(WEIGHTS)와 풍속 기준(WIND_FULL_MS)은 근거 없는 가정값이다 (보정하지 않았다). 강수/토양수분은 LTWR 과 같은 곡선(app/weather/curves.py)을 쓴다.
+  - 안개/시정은 ERA5-Land 에 없다. 팀 노트북의 로지스틱 식(app/weather/fog.py: 이슬점 차, 풍속, 최근 3시간 강수)으로 안개 확률을 추정한다.
   - ERA5-Land 는 0.1°(약 11km x 6km) 격자라 20km 작전 구역에 2~4칸이다. 작전 구역 격자(200m)로는 선형 보간한 값이며,
     보간은 정보를 늘리지 않는다 (거친 값이 부드럽게 보일 뿐이다). 바다 칸은 ERA5-Land 에 값이 없어 가장 가까운 육지 값으로 채운다.
   - 지형의 영향은 들어 있지 않다 (순수 기상). 위험도(c_mob/c_sen)와의 관계는 `scripts/check_weather_alignment.py` 로 시간 변화를 비교해 볼 수 있다.
-  - 시나리오 시각을 UTC 로 간주한다 (`WEATHER_UTC_OFFSET_H` 로 조정). 위험도 지도가 만들어진 날씨와 같은 날의 자료인지는 확인되지 않았다
-    (시나리오 날짜 표기가 2023-06-30, 2023-07-26, 2024-07-03 으로 엇갈린다).
+  - 시나리오 시각을 UTC 로 간주한다 (`WEATHER_UTC_OFFSET_H` 로 조정). 기본 시나리오(2022-08-20 22:00 UTC~)의 위험도 레이어는 같은 ERA5 로 우리가 직접
+    만들었으므로(scripts/build_ltwr_layers.py) 날짜가 어긋날 일이 없다. (팀 원본 데이터 map_20km 는 날짜 표기가 엇갈려 확인되지 않았다.)
 
-자료 파일: `backend/data/weather/era5_scenario.nc` (`WEATHER_ERA5_PATH` 로 바꿀 수 있다). 없으면 지표를 만들지 않고 이유를 알린다
-(없는 자료를 다른 날의 값으로 대신하지 않는다). 만드는 법은 `scripts/download_era5_scenario.py`.
+자료 파일: `backend/data/weather/era5_scenario.nc` (`WEATHER_ERA5_PATH` 로 바꿀 수 있다). 기본 파일은 ERA5-Land 2022-08-19~21 의 이 지역 조각이다
+(scripts/extract_era5_scenario.py 로 월별 파일에서 만든다, 작아서 git 에 둔다). 없으면 지표를 만들지 않고 이유를 알린다 (다른 날의 값으로 대신하지 않는다).
 """
 
 from __future__ import annotations
@@ -30,21 +30,19 @@ import xarray as xr
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
+from app.weather.curves import curve
 from app.weather.era5 import assert_hourly, rain_rate_mm
+from app.weather.fog import fog_probability, wet_3h
 
 DEFAULT_PATH = Path(__file__).resolve().parents[2] / "data" / "weather" / "era5_scenario.nc"
 VARIABLES = ("tp", "t2m", "d2m", "u10", "v10", "swvl1")
 
 # ── 가정값 (보정하지 않았다) ─────────────────────────────────────────────
 WEIGHTS = {"rain": 0.4, "fog": 0.3, "soil": 0.2, "wind": 0.1}
-RAIN_FULL_MMPH = 5.0                       # 이 이상이면 강수 요인 1
 WIND_FULL_MS = 15.0                        # 이 이상이면 바람 요인 1
-SOIL_DRY, SOIL_WET = 0.15, 0.45            # 토양수분(m3/m3)이 이 사이에서 0 → 1
-FOG_DEPRESSION_ZERO = 3.0                  # 이슬점 차(K)가 이 이상이면 안개 가능성 0, 0 이면 1
-FOG_CALM_MS = 4.0                          # 바람이 이 이상이면 안개 가능성 0 (약할수록 1)
 NOTES = [
-    "측정값이 아니라 가정이 들어간 추정입니다 (가중치와 0~1 변환 기준은 보정하지 않은 가정값).",
-    "안개/시정은 ERA5-Land에 없어 '이슬점 차가 작고 바람이 약하면 안개 가능성'이라는 규칙으로 추정했습니다.",
+    "측정값이 아니라 가정이 들어간 추정입니다 (가중치와 풍속 기준은 보정하지 않은 가정값, 강수/토양수분 곡선은 팀 노트북 강수 임계 구간 기준).",
+    "안개/시정은 ERA5-Land에 없어 이슬점 차, 풍속, 최근 3시간 강수로 안개 확률을 구하는 팀 노트북의 로지스틱 식으로 추정했습니다.",
     "ERA5-Land는 0.1도(약 11km x 6km) 격자입니다. 작전 구역에는 2~4칸이고, 지도는 이를 선형 보간한 값이라 세부 위치별 차이를 말해 주지 않습니다.",
     "지형의 영향은 들어 있지 않습니다 (순수 기상). 위험도와 같은 척도가 아닙니다.",
 ]
@@ -64,13 +62,13 @@ def utc_offset_h() -> float:
 
 # ── 요인 계산 (격자 위에서, 모두 0~1) ────────────────────────────────────
 
-def components(rain_mmph, t2m_k, d2m_k, u10, v10, swvl1) -> dict[str, np.ndarray]:
+def components(rain_mmph, t2m_k, d2m_k, u10, v10, swvl1, wet=0.0) -> dict[str, np.ndarray]:
     wind = np.hypot(u10, v10)
     depression = np.maximum(t2m_k - d2m_k, 0.0)
-    rain = np.clip(rain_mmph / RAIN_FULL_MMPH, 0.0, 1.0)
+    rain = curve("rain", rain_mmph)
     wind01 = np.clip(wind / WIND_FULL_MS, 0.0, 1.0)
-    soil = np.clip((swvl1 - SOIL_DRY) / (SOIL_WET - SOIL_DRY), 0.0, 1.0)
-    fog = np.clip((FOG_DEPRESSION_ZERO - depression) / FOG_DEPRESSION_ZERO, 0.0, 1.0) * np.clip((FOG_CALM_MS - wind) / FOG_CALM_MS, 0.0, 1.0)
+    soil = curve("soil", swvl1)
+    fog = fog_probability(t2m_k, d2m_k, wind, wet)
     index = WEIGHTS["rain"] * rain + WEIGHTS["fog"] * fog + WEIGHTS["soil"] * soil + WEIGHTS["wind"] * wind01
     return {"rain": rain, "fog": fog, "soil": soil, "wind": wind01, "index": index,
             "rain_mmph": rain_mmph, "depression_k": depression, "wind_ms": wind, "soil_m3m3": swvl1}
@@ -104,7 +102,8 @@ class ScenarioWeather:
         valid = np.isfinite(get("t2m")[1])
         rain = rain_rate_mm(get("tp"), times)
         rain[0] = rain[1]                       # 첫 시각은 앞 값이 없어 NaN 이므로 바로 다음 값으로 둔다 (지표는 두 번째 시각부터만 쓴다)
-        self.raw = {"rain": fill_nearest(rain, valid), "t2m": fill_nearest(get("t2m"), valid), "d2m": fill_nearest(get("d2m"), valid),
+        wet = wet_3h(rain, axis=0)               # 최근 3시간에 비가 있었는지 (안개 식의 젖음 항, 0/1)
+        self.raw = {"rain": fill_nearest(rain, valid), "wet": fill_nearest(wet, valid), "t2m": fill_nearest(get("t2m"), valid), "d2m": fill_nearest(get("d2m"), valid),
                     "u10": fill_nearest(get("u10"), valid), "v10": fill_nearest(get("v10"), valid), "swvl1": fill_nearest(get("swvl1"), valid)}
 
     def utc_time(self, turn: int) -> np.datetime64:
@@ -124,7 +123,7 @@ class ScenarioWeather:
         k = min(k, len(self.times) - 2)
         w = float((t - self.times[k]) / (self.times[k + 1] - self.times[k]))
         mix = {name: (1 - w) * a[k] + w * a[k + 1] for name, a in self.raw.items()}
-        return components(mix["rain"], mix["t2m"], mix["d2m"], mix["u10"], mix["v10"], mix["swvl1"])
+        return components(mix["rain"], mix["t2m"], mix["d2m"], mix["u10"], mix["v10"], mix["swvl1"], mix["wet"])
 
     def on_grid(self, turn: int, lat2d: np.ndarray, lon2d: np.ndarray) -> dict[str, np.ndarray]:
         """작전 구역 격자(200m)로 선형 보간한 요인과 지표."""

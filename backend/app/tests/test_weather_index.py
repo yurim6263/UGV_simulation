@@ -49,27 +49,27 @@ def test_weights_sum_to_one_so_the_index_stays_in_0_1():
     assert sum(si.WEIGHTS.values()) == pytest.approx(1.0)
 
 
-def test_calm_dewpoint_saturated_air_gives_full_fog_and_no_rain_wind():
+def test_calm_dewpoint_saturated_air_gives_near_full_fog_and_no_rain_wind():
     c = si.components(np.array(0.0), np.array(290.0), np.array(290.0), np.array(0.0), np.array(0.0), np.array(0.15))
-    assert float(c["fog"]) == pytest.approx(1.0) and float(c["rain"]) == 0 and float(c["wind"]) == 0 and float(c["soil"]) == 0
-    assert float(c["index"]) == pytest.approx(si.WEIGHTS["fog"])
+    assert float(c["fog"]) > 0.999 and float(c["rain"]) == 0 and float(c["wind"]) == 0 and float(c["soil"]) == 0
+    assert float(c["index"]) == pytest.approx(si.WEIGHTS["fog"], abs=1e-3)
 
 
-def test_wind_breaks_up_fog_and_dry_air_has_none():
-    windy = si.components(np.array(0.0), np.array(290.0), np.array(290.0), np.array(si.FOG_CALM_MS), np.array(0.0), np.array(0.3))
+def test_wind_and_dry_air_reduce_fog_and_wet_hours_raise_it():
+    calm = si.components(np.array(0.0), np.array(290.0), np.array(289.0), np.array(1.0), np.array(0.0), np.array(0.3))
+    windy = si.components(np.array(0.0), np.array(290.0), np.array(289.0), np.array(8.0), np.array(0.0), np.array(0.3))
     dry = si.components(np.array(0.0), np.array(290.0), np.array(280.0), np.array(0.0), np.array(0.0), np.array(0.3))
-    assert float(windy["fog"]) == 0 and float(dry["fog"]) == 0
+    wet = si.components(np.array(0.0), np.array(290.0), np.array(289.0), np.array(1.0), np.array(0.0), np.array(0.3), wet=1.0)
+    assert float(calm["fog"]) > float(windy["fog"]) and float(windy["fog"]) < 0.05 and float(dry["fog"]) < 0.01
+    assert float(wet["fog"]) > float(calm["fog"])
 
 
-def test_every_factor_saturates_at_its_assumed_scale():
-    c = si.components(np.array(50.0), np.array(300.0), np.array(300.0), np.array(30.0), np.array(0.0), np.array(0.9))
-    assert float(c["rain"]) == 1 and float(c["wind"]) == 1 and float(c["soil"]) == 1
-    assert float(c["index"]) == pytest.approx(si.WEIGHTS["rain"] + si.WEIGHTS["soil"] + si.WEIGHTS["wind"])    # 바람이 세서 안개는 0
-
-
-def test_soil_moisture_is_scaled_between_dry_and_wet():
-    c = si.components(np.array(0.0), np.array(300.0), np.array(280.0), np.array(0.0), np.array(0.0), np.array((si.SOIL_DRY + si.SOIL_WET) / 2))
-    assert float(c["soil"]) == pytest.approx(0.5)
+def test_rain_and_soil_use_the_same_curves_as_ltwr():
+    c = si.components(np.array(2.0), np.array(300.0), np.array(280.0), np.array(0.0), np.array(0.0), np.array(0.40))
+    assert float(c["rain"]) == pytest.approx(0.35) and float(c["soil"]) == pytest.approx(0.6)            # curves.py 기준점
+    heavy = si.components(np.array(50.0), np.array(300.0), np.array(300.0), np.array(30.0), np.array(0.0), np.array(0.9))
+    assert float(heavy["rain"]) == 1 and float(heavy["wind"]) == 1 and float(heavy["soil"]) == 1
+    assert float(heavy["index"]) == pytest.approx(si.WEIGHTS["rain"] + si.WEIGHTS["soil"] + si.WEIGHTS["wind"], abs=1e-3)    # 바람이 세서 안개는 0
 
 
 def test_fill_nearest_fills_missing_cells_from_the_closest_valid_cell():
@@ -126,7 +126,7 @@ async def test_without_data_the_api_says_why_and_never_invents_values(client: As
 @pytest.mark.asyncio
 async def test_with_data_the_api_returns_turn_means_and_an_overlay_image(client: AsyncClient, monkeypatch, tmp_path):
     path = tmp_path / "era5.nc"
-    era5([0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], first_hour="2023-06-30T20:00").to_netcdf(path)
+    era5([0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], first_hour="2022-08-20T20:00").to_netcdf(path)          # 기본 시나리오(2022-08-20 22:00 UTC~)를 덮는 합성 자료
     monkeypatch.setenv("WEATHER_ERA5_PATH", str(path))
     si._cache.clear()
     info = (await client.get("/api/map/weather/info")).json()

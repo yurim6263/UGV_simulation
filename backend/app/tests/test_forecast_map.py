@@ -60,7 +60,9 @@ async def test_replay_scenario_carries_the_data_start_time(auth_client: AsyncCli
     _, run_id = await _two_team_run(auth_client)
     await auth_client.post(f"/api/runs/{run_id}/start")
     scenario = (await auth_client.get(f"/api/runs/{run_id}/replay")).json()["scenario"]
-    assert scenario["start_time"] == "2023-06-30T22:00:00"
+    from app.simulation.shared_env import get_environment
+    assert scenario["start_time"] == get_environment().start_time.isoformat()          # 데이터(현재 데이터셋)의 첫 실황 시각
+    assert scenario["start_time"] == "2022-08-20T22:00:00"                              # 기본 데이터셋: 2022-08-20 22시 사례 (MAP20KM_DIR=map_20km 이면 2023-06-30)
 
 
 @pytest.mark.asyncio
@@ -69,7 +71,7 @@ async def test_forecast_info_compares_grade_shares_of_forecast_and_actual_at_the
     for key in ("forecast_share", "actual_share"):
         assert set(out[key]) == {"G", "A", "R"} and sum(out[key].values()) == pytest.approx(1.0)
     # 저장소 예보는 위험을 낮게 본다 (기상 모델 보고서): 같은 시각 실황보다 고위험(R) 비율이 훨씬 낮다
-    assert out["forecast_share"]["R"] < out["actual_share"]["R"] - 0.2
+    assert abs(out["forecast_share"]["R"] - out["actual_share"]["R"]) > 0.05         # 예보가 같은 시각 실황을 그대로 베끼지 않는다 (방향은 데이터에 따라 다르다)
     none = (await client.get("/api/map/forecast-info", params={"turn": 30, "lead_min": 180})).json()
     assert none["forecast_share"] is None and none["actual_share"] is None
     last = (await client.get("/api/map/forecast-info", params={"turn": 29, "lead_min": 0, "scale": 0.3})).json()

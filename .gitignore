@@ -60,3 +60,4 @@ backend/data/weather/*.nc
 
 # OSM 도로 원자료(Overpass 에서 다시 받는다, app/geo/static_grid.py)
 backend/data/osm/
+!backend/data/weather/era5_scenario.nc

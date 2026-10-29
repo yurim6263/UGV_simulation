@@ -41,8 +41,7 @@ def _weather():
 @router.get("/info", summary="기상 악영향 지표의 가용 여부, 가정, 턴별 구역 평균")
 def weather_info():
     base = {"weights": si.WEIGHTS, "notes": si.NOTES,
-            "scales": {"rain_full_mmph": si.RAIN_FULL_MMPH, "wind_full_ms": si.WIND_FULL_MS, "soil_dry": si.SOIL_DRY, "soil_wet": si.SOIL_WET,
-                       "fog_depression_zero_k": si.FOG_DEPRESSION_ZERO, "fog_calm_ms": si.FOG_CALM_MS}}
+            "scales": {"wind_full_ms": si.WIND_FULL_MS, "fog": "ΔT, 풍속, 최근 3시간 강수의 로지스틱 (app/weather/fog.py)", "rain_soil": "팀 노트북 강수 임계 구간 기준 곡선 (app/weather/curves.py)"}}
     try:
         w = si.get_weather()
     except si.WeatherUnavailable as exc:

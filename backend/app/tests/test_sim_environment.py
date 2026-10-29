@@ -5,7 +5,8 @@ backend/app/tests/test_sim_environment.py
 저장소에 포함된 그단스크 20km 데이터(111×111, 200m)를 그대로 사용한다.
 """
 
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 
 import numpy as np
 import pytest
@@ -68,18 +69,17 @@ def test_midnight_overflow_timestamps_are_normalized():
 # ── 로더 ─────────────────────────────────────────────────────────────────
 
 def test_all_actual_files_are_loaded(env):
-    """실황 31개 파일 중 24xx 시각 때문에 19개가 버려지던 문제의 회귀 테스트."""
+    """실황 31개 파일 중 24xx 시각 때문에 19개가 버려지던 문제의 회귀 테스트. 시각은 데이터에서 읽는다 (데이터셋이 바뀌어도 5시간, 10분 간격 31장)."""
+    t0 = min(env.actual_data_pool)
     assert len(env.actual_data_pool) == 31
-    assert max(env.actual_data_pool) == datetime(2023, 7, 1, 3, 0)
+    assert max(env.actual_data_pool) == t0 + timedelta(hours=5)
+    assert sorted(env.actual_data_pool) == [t0 + timedelta(minutes=10 * i) for i in range(31)]
 
 
 def test_forecast_pool_is_separate_from_actual(env):
     assert len(env.global_time_pool) == 54  # 모델 시각 3개 × 18
-    assert env._model_times == [
-        datetime(2023, 6, 30, 22, 0),
-        datetime(2023, 6, 30, 23, 0),
-        datetime(2023, 7, 1, 0, 0),
-    ]
+    t0 = min(env.actual_data_pool)
+    assert env._model_times == [t0, t0 + timedelta(hours=1), t0 + timedelta(hours=2)]
 
 
 def test_base_layer_matches_grid_and_blocks_only_water(env):
@@ -89,29 +89,37 @@ def test_base_layer_matches_grid_and_blocks_only_water(env):
     assert (env.base_layer[env.blocked] >= BLOCKED_COST).all()
 
 
-def test_missing_cells_are_nan_not_zero(env):
-    """동적 파일은 경로 버퍼 안의 셀만 담는다. 나머지는 '위험 없음'이 아니라 '데이터 없음'이다."""
-    layer = env.actual_data_pool[datetime(2023, 6, 30, 22, 0)]
+def test_missing_cells_are_nan_not_zero(env, tmp_path):
+    """동적 파일이 일부 셀(예: 팀 원본의 경로 버퍼 10,048칸)만 담아도, 나머지는 '위험 없음(0)'이 아니라 '데이터 없음(NaN)'이다. 합성 부분 파일로 확인한다."""
+    import pandas as pd
+
+    full = pd.read_parquet(sorted(__import__("glob").glob(os.path.join(Cfg.DYNAMIC_DIR, "actual", "*.parquet")))[0])
+    part = full[full.row < 55]                                       # 위쪽 절반만
+    path = tmp_path / "sim_cost_map_20000101_0000.parquet"
+    part.to_parquet(path)
+    layers = env._read_layers(str(path))
+    layer = layers["total"]
     assert layer.shape == Cfg.GRID_SIZE
-    assert 0.0 < np.isnan(layer).mean() < 0.5
+    assert np.isnan(layer[60:]).all() and np.isfinite(layer[:55]).all() and 0.0 < np.isnan(layer).mean() < 0.6
     assert np.nanmin(layer) >= 0.0 and np.nanmax(layer) <= 1.0
 
 
 def test_planning_cube_uses_forecast_and_never_peeks_at_future_actuals(env):
-    env.sim_time = datetime(2023, 6, 30, 22, 0)
+    t0 = min(env.actual_data_pool)
+    env.sim_time = t0
     env.current_model_time = env.sim_time
     cube = env.get_active_time_cube()
     assert cube.shape == (Cfg.NT, *Cfg.GRID_SIZE)
 
-    model = datetime(2023, 6, 30, 22, 0)
-    target = datetime(2023, 6, 30, 23, 30)  # i = 9
+    model = t0
+    target = t0 + timedelta(minutes=90)  # i = 9
     assert np.array_equal(cube[9], env.global_time_pool[(model, target)], equal_nan=True)
     # 계획 레이어(예보)와 같은 시각의 실황(정답)은 달라야 한다 — 같다면 정답을 보고 있다는 뜻
     assert not np.array_equal(cube[9], env.actual_data_pool[target], equal_nan=True)
 
 
 def test_planning_cube_falls_back_to_persistence_when_forecast_is_missing(env):
-    env.sim_time = datetime(2023, 7, 1, 2, 30)
+    env.sim_time = min(env.actual_data_pool) + timedelta(hours=4, minutes=30)
     env.current_model_time = env.sim_time
     before = env.stats["persistence_layers"]
     cube = env.get_active_time_cube()
