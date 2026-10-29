@@ -525,6 +525,8 @@ function MainDashboard({ account, onLogout }) {
                 </button>
               );
             })}
+            <p className="hint tight">노란 줄의 큰 숫자는 그 모드가 <b>가장 우선하는 지표</b>(편성 계산의 평균, 시드 4개)이고, 도착·SOS는 이번 실행 1회의 기록입니다.
+              수색 면적: 센서로 훑은 면적 비율 · 작전 시간: 가장 늦게 끝난 제대 기준 · 운용자 과부하: 운용자 개입 요청이 몰려 처리 능력을 넘은 시간.</p>
           </section>
           )}
           {!myTeam && model && models?.assigned && (
