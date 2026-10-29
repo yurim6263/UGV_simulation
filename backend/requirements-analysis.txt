@@ -3,3 +3,4 @@
 xarray>=2024.1.0
 netCDF4>=1.6.5
 xgboost>=2.0.0
+cdsapi            # 시나리오 날짜 ERA5 내려받기 (scripts/download_era5_scenario.py), ~/.cdsapirc 필요

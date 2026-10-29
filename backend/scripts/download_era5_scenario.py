@@ -19,7 +19,9 @@ backend/scripts/download_era5_scenario.py
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
+import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -47,19 +49,22 @@ def main() -> None:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     client = cdsapi.Client()
+    work = Path(tempfile.mkdtemp(prefix="era5_dl_"))          # 한글이 든 경로에서는 netCDF4 가 파일을 못 연다(OSError 22). ASCII 임시 폴더에서 다룬다
     parts = []
     for d in days:
-        part = out.parent / f"_part_{d:%Y%m%d}.nc"
+        part = work / f"part_{d:%Y%m%d}.nc"
         client.retrieve("reanalysis-era5-land", {
             "variable": VARIABLES, "year": [f"{d:%Y}"], "month": [f"{d:%m}"], "day": [f"{d:%d}"],
             "time": [f"{h:02d}:00" for h in range(24)], "area": args.area, "data_format": "netcdf", "download_format": "unarchived",
         }, str(part))
         parts.append(part)
         print(f"받음: {d}")
-    ds = xr.concat([xr.open_dataset(p) for p in parts], dim="valid_time").sortby("valid_time")
-    ds.to_netcdf(out)
-    for p in parts:
-        p.unlink()
+    ds = xr.concat([xr.open_dataset(p) for p in parts], dim="valid_time").sortby("valid_time").load()
+    merged = work / "merged.nc"
+    ds.to_netcdf(merged)
+    ds.close()
+    shutil.copy(merged, out)
+    shutil.rmtree(work, ignore_errors=True)
     print(f"저장: {out}  ({ds.sizes['valid_time']}시간, {ds.sizes['latitude']}x{ds.sizes['longitude']}칸)")
     print("다음: python scripts/check_weather_alignment.py  (위험도의 시간 변화와 맞는지 확인)")
 
