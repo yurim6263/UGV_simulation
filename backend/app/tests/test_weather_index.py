@@ -151,3 +151,26 @@ async def test_data_that_does_not_cover_the_scenario_time_is_reported_not_extrap
     assert info["available"] is False and "덮지 않습니다" in info["reason"]
     assert (await client.get("/api/map/weather/0.png")).status_code == 404
     si._cache.clear()
+
+
+def test_concurrent_first_loads_do_not_race_on_the_cache(monkeypatch, tmp_path):
+    """브라우저가 여러 턴의 이미지를 동시에 요청해도 첫 로딩에서 KeyError 가 나지 않는다 (500 이 실제로 났다)."""
+    import threading
+
+    path = tmp_path / "era5.nc"
+    era5([0.0] * 12, first_hour="2022-08-20T20:00").to_netcdf(path)
+    monkeypatch.setenv("WEATHER_ERA5_PATH", str(path))
+    si._cache.clear()
+    errors, got = [], []
+
+    def worker():
+        try:
+            got.append(si.get_weather())
+        except Exception as exc:  # noqa: BLE001
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    si._cache.clear()
+    assert not errors and len(got) == 8 and all(g is got[0] for g in got)          # 한 번만 읽고 같은 객체를 돌려준다

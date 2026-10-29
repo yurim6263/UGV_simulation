@@ -228,3 +228,12 @@ async def test_operator_sitrep_for_an_unassigned_mode_is_refused(login_as, missi
     user1 = await login_as("user1")
     resp = await user1.post("/api/assistant/sitrep", json={"mode": "rapid"})
     assert resp.status_code == 403, resp.text            # AI 키가 없어도(503) 모드 검사가 먼저다
+
+
+@pytest.mark.asyncio
+async def test_preview_map_images_stay_public_because_img_tags_cannot_send_tokens(client: AsyncClient):
+    """모드 접근 검사를 run_id 가 없는 미리보기 API 에까지 걸면 목표 입력 화면의 지형/위험도 이미지가 401 로 깨진다 (실제로 한 번 그랬다)."""
+    for path in ("/api/map/tactical/terrain-image", "/api/map/tactical/cost-image?layer=risk", "/api/map/tactical/bounds",
+                 "/api/map/overlay/total/0.png", "/api/map/weather/info"):
+        r = await client.get(path)
+        assert r.status_code == 200, (path, r.status_code)

@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -161,18 +162,26 @@ def open_era5(path: Path) -> xr.Dataset:
 
 
 _cache: dict[tuple, ScenarioWeather] = {}
+_lock = threading.Lock()
 
 
 def get_weather() -> ScenarioWeather:
-    """파일이 바뀌면(수정 시각) 다시 읽는다. 없거나 맞지 않으면 WeatherUnavailable."""
+    """파일이 바뀌면(수정 시각) 다시 읽는다. 없거나 맞지 않으면 WeatherUnavailable.
+
+    이미지 API 는 동기 함수라 스레드 풀에서 동시에 불린다 (브라우저가 다음 턴 이미지를 미리 요청한다). 락이 없으면 한 스레드가 캐시를 비우는 사이
+    다른 스레드가 키를 못 찾아 KeyError(500)가 난다 (실제로 났다).
+    """
     from app.simulation.shared_env import get_environment
 
     path = data_path()
     key = (str(path), path.stat().st_mtime_ns if path.exists() else None, utc_offset_h())
-    if key not in _cache:
-        _cache.clear()
-        start = get_environment().start_time
-        if start is None:
-            raise WeatherUnavailable("시나리오 시작 시각을 알 수 없습니다.")
-        _cache[key] = ScenarioWeather(open_era5(path), start, utc_offset_h(), source=f"ERA5-Land 0.1° 시간별 ({path.name})")
-    return _cache[key]
+    with _lock:
+        hit = _cache.get(key)
+        if hit is None:
+            start = get_environment().start_time
+            if start is None:
+                raise WeatherUnavailable("시나리오 시작 시각을 알 수 없습니다.")
+            hit = ScenarioWeather(open_era5(path), start, utc_offset_h(), source=f"ERA5-Land 0.1° 시간별 ({path.name})")
+            _cache.clear()
+            _cache[key] = hit
+        return hit
