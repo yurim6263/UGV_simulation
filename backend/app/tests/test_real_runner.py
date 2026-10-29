@@ -228,11 +228,15 @@ async def test_latest_run_set_lists_the_most_recent_missions_runs_by_mode(auth_c
     for mode in ("balanced", "recon", "rapid"):
         await auth_client.post(f"/api/missions/{mid}/runs?mode={mode}")
 
-    user1 = await login_as("user1")                                                  # 통제관도 같은 결과를 이어서 본다
-    body = (await user1.get("/api/runs/latest-set")).json()
-    assert body["mission_id"] == mid                                                 # 이전 임무가 아니라 가장 최근 임무
-    assert [r["mode"] for r in body["runs"]] == ["balanced", "recon", "rapid"]
-    assert body["all_completed"] is False and all(r["status"] == "CREATED" for r in body["runs"])
+    full = (await auth_client.get("/api/runs/latest-set")).json()
+    assert full["mission_id"] == mid                                                 # 이전 임무가 아니라 가장 최근 임무
+    assert [r["mode"] for r in full["runs"]] == ["balanced", "recon", "rapid"]       # 지휘관은 세 모드 모두
+    assert full["all_completed"] is False and all(r["status"] == "CREATED" for r in full["runs"])
+
+    user1 = await login_as("user1")                                                  # 통제관은 담당 제대에 지정된 모드(기본 균형)의 실행만 이어서 본다
+    mine = (await user1.get("/api/runs/latest-set")).json()
+    assert mine["mission_id"] == mid and [r["mode"] for r in mine["runs"]] == ["balanced"]
+    assert mine["team_modes"] == {"Alpha": "balance"}
 
 
 @pytest.mark.asyncio

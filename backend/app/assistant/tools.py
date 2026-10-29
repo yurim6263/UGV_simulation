@@ -29,7 +29,14 @@ from app.services.run_data import COMMANDER_ROLES, MODE_OF, RunDataError, assign
 from app.simulation.presets import PARETO_PATH
 
 ROOT_DATA = Path(__file__).resolve().parents[2] / "data"
-FORECAST_SKILL_PATH = ROOT_DATA / "weather" / "forecast_skill.json"
+FORECAST_SKILL_PATH = ROOT_DATA / "weather" / "forecast_skill.json"          # 팀 원본 데이터(map_20km)의 예보 오차
+
+
+def forecast_skill_path() -> Path:
+    """지금 쓰는 위험도 데이터셋의 예보 오차 파일. 팀 원본은 forecast_skill.json, 그 외는 forecast_skill_<폴더>.json (scripts/forecast_skill_report.py)."""
+    from app.simulation.algo.sim_config import MAP20KM_DIR
+
+    return FORECAST_SKILL_PATH if MAP20KM_DIR == "map_20km" else ROOT_DATA / "weather" / f"forecast_skill_{MAP20KM_DIR}.json"
 SERVER_MODES = ("balanced", "recon", "rapid")
 MODE_LABEL = {"balanced": "균형", "recon": "정밀", "rapid": "신속"}
 EVENT_LIMIT = 30
@@ -206,9 +213,10 @@ async def get_optimization_results(ctx: ToolContext, args: dict) -> dict:
 
 
 async def get_forecast_quality(ctx: ToolContext, args: dict) -> dict:
-    if not FORECAST_SKILL_PATH.exists():
-        raise ToolError("예보 오차 분석 파일이 없습니다 (backend/scripts/make_weather_report.py 로 만든다).")
-    t = json.loads(FORECAST_SKILL_PATH.read_text(encoding="utf-8"))["total"]
+    path = forecast_skill_path()
+    if not path.exists():
+        raise ToolError(f"예보 오차 분석 파일이 없습니다 ({path.name}). backend/scripts/forecast_skill_report.py 로 만든다.")
+    t = json.loads(path.read_text(encoding="utf-8"))["total"]
     keep = {0, 30, 60, 90, 120, 170}
     return {
         "forecast_issue_times": t["models"],
