@@ -110,6 +110,8 @@ SOS, 개입, 과부하는 UGV 대수에 거의 비례해서 늘기 때문에, "�
   - 통제관이 담당 제대에 지정되지 않은 모드의 run을 요청하면 403이다. 재생 API(`/runs/{id}/replay`)뿐 아니라 경로에 `run_id`가 있는 모든 API(대시보드, 지도 등)가 같은 검사(`deps.run_path_guard`)를 거친다.
   - `GET /runs/latest-set`은 통제관에게 지정된 모드의 실행만 알려 준다. 지정 편성 합성 API와 모드 지정 API는 지휘관 전용이다.
   - AI 어시스턴트: 모드를 가로지르는 도구(`compare_modes`, `get_optimization_results`, `get_formation_plan`, `run_sql_analysis`)는 지휘관만 쓴다. 통제관의 `get_run_summary`·`get_run_events`는 모드를 생략하면 지정된 모드를 쓰고, 다른 모드를 지정하면 403 오류 근거가 된다. 상황 보고(`/assistant/sitrep`)도 지정되지 않은 모드를 요청하면 거부한다.
+  - **지휘관 전용 동작**: `/runs/commander/{id}/...`(작전 실행·종료·임무 하달·경로 수정, 지휘관 화면 조회)와 `/runs/{id}/commander/dashboard`는 역할 검사(`require_roles("commander")`)가 없어 통제관도 호출할 수 있었다. 9개 경로를 지휘관 전용으로 막았다.
+  - **WebSocket**(`/ws/runs/{id}`)도 REST와 같은 모드 검사를 한다 (통제관이 지정되지 않은 모드의 run을 구독하면 코드 4003으로 종료).
   - 화면: 통제관은 모드 비교 카드, 지정 편성, 최적화 탭이 없고 "임무 모드: ○○ (지휘관 지정)"만 본다.
 - 테스트: `app/tests/test_team_modes.py` (지정·검증, 모드별 접근, 대시보드 API 차단, 합성이 제대마다 지정된 모드의 기록만 쓰는지, 도구 권한).
 - 미해결: 지정을 바꾸어도 이미 통제관 화면에 열려 있는 재생은 다시 불러오기 전까지 이전 지정을 보여 준다 (실시간 푸시 없음). 임무 "하달"은 지정을 확정하는 알림일 뿐 서버 상태(하달됨)를 바꾸지 않는다.

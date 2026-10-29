@@ -237,3 +237,61 @@ async def test_preview_map_images_stay_public_because_img_tags_cannot_send_token
                  "/api/map/overlay/total/0.png", "/api/map/weather/info"):
         r = await client.get(path)
         assert r.status_code == 200, (path, r.status_code)
+
+
+# ── 지휘관 전용 동작과 WebSocket ─────────────────────────────────────────
+
+COMMANDER_ONLY = [("get", "/api/runs/commander/{id}/home"), ("get", "/api/runs/commander/{id}/echelons"), ("get", "/api/runs/commander/{id}/map"),
+                  ("get", "/api/runs/commander/{id}/panels"), ("get", "/api/runs/{id}/commander/dashboard"),
+                  ("post", "/api/runs/commander/{id}/actions/execute"), ("post", "/api/runs/commander/{id}/actions/terminate"),
+                  ("post", "/api/runs/commander/{id}/actions/dispatch"), ("post", "/api/runs/commander/{id}/actions/replan-route")]
+
+
+@pytest.mark.asyncio
+async def test_commander_only_dashboard_routes_and_actions_refuse_operators(login_as, mission_id: int, auth_client: AsyncClient):
+    """통제관이 작전 실행/종료/임무 하달/경로 수정을 호출할 수 있었다. 역할 검사가 없는 라우트였다."""
+    ids = await seed(auth_client, mission_id)
+    rid = ids["balanced"]                                                   # 통제관에게 지정된(기본) 모드라 모드 검사는 통과해도 역할에서 막혀야 한다
+    user1 = await login_as("user1")
+    for method, path in COMMANDER_ONLY:
+        r = await getattr(user1, method)(path.format(id=rid))
+        assert r.status_code == 403 and "commander" in r.text, (method, path, r.status_code, r.text[:80])
+        c = await getattr(auth_client, method)(path.format(id=rid))
+        assert c.status_code != 403, (method, path)                          # 지휘관은 이 검사에 걸리지 않는다
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.closed = None
+        self.accepted = False
+
+    async def accept(self):
+        self.accepted = True
+
+    async def close(self, code: int = 1000):
+        self.closed = code
+
+    async def send_text(self, _):
+        pass
+
+    async def receive_text(self):
+        from starlette.websockets import WebSocketDisconnect
+        raise WebSocketDisconnect(1000)
+
+
+@pytest.mark.asyncio
+async def test_websocket_refuses_operators_for_runs_of_unassigned_modes(mission_id: int, auth_client: AsyncClient):
+    from app.api.websocket import websocket_endpoint
+    from app.core.security import create_access_token
+
+    ids = await seed(auth_client, mission_id)
+    op = create_access_token(subject="2", role="operator", unit="1제대")
+    cmd = create_access_token(subject="1", role="commander")
+    for mode, expect_denied in (("balanced", False), ("recon", True), ("rapid", True)):
+        ws = _FakeSocket()
+        await websocket_endpoint(ids[mode], ws, token=op)
+        assert (ws.closed == 4003) == expect_denied and ws.accepted == (not expect_denied), (mode, ws.closed)
+    for mode in SERVER_MODES:                                               # 지휘관은 모두 구독
+        ws = _FakeSocket()
+        await websocket_endpoint(ids[mode], ws, token=cmd)
+        assert ws.closed is None and ws.accepted

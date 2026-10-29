@@ -434,7 +434,7 @@ async def get_patrol_area(run_id: int, db: DBSession, user: CurrentUser):
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
     return result
 
-@router.get("/commander/{run_id}/home", response_model=CommanderHomeOut, summary="지휘관 메인 좌측 패널")
+@router.get("/commander/{run_id}/home", response_model=CommanderHomeOut, summary="지휘관 메인 좌측 패널", dependencies=[Depends(require_roles("commander"))])
 async def get_commander_home(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.get_commander_home(run_id)
@@ -443,7 +443,7 @@ async def get_commander_home(run_id: int, db: DBSession, user: CurrentUser):
     return result
 
 
-@router.get("/commander/{run_id}/echelons", response_model=CommanderEchelonsOut, summary="지휘관 메인 상단 제대 표")
+@router.get("/commander/{run_id}/echelons", response_model=CommanderEchelonsOut, summary="지휘관 메인 상단 제대 표", dependencies=[Depends(require_roles("commander"))])
 async def get_commander_echelons(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.get_commander_echelons(run_id)
@@ -452,7 +452,7 @@ async def get_commander_echelons(run_id: int, db: DBSession, user: CurrentUser):
     return result
 
 
-@router.get("/commander/{run_id}/map", response_model=CommanderMapOut, summary="지휘관 메인 맵")
+@router.get("/commander/{run_id}/map", response_model=CommanderMapOut, summary="지휘관 메인 맵", dependencies=[Depends(require_roles("commander"))])
 async def get_commander_map(run_id: int, layer: str = "risk", db: DBSession = None, user: CurrentUser = None):
     svc = DashboardService(db)
     result = await svc.get_commander_map(run_id, layer)
@@ -461,7 +461,7 @@ async def get_commander_map(run_id: int, layer: str = "risk", db: DBSession = No
     return result
 
 
-@router.get("/commander/{run_id}/panels", response_model=CommanderPanelsOut, summary="지휘관 메인 보조 패널")
+@router.get("/commander/{run_id}/panels", response_model=CommanderPanelsOut, summary="지휘관 메인 보조 패널", dependencies=[Depends(require_roles("commander"))])
 async def get_commander_panels(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.get_commander_panels(run_id)
@@ -470,7 +470,7 @@ async def get_commander_panels(run_id: int, db: DBSession, user: CurrentUser):
     return result
 
 
-@router.post("/commander/{run_id}/actions/execute", response_model=CommanderActionResultOut, summary="작전 실행")
+@router.post("/commander/{run_id}/actions/execute", response_model=CommanderActionResultOut, summary="작전 실행", dependencies=[Depends(require_roles("commander"))])
 async def commander_execute(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.commander_action(run_id, "execute")
@@ -479,7 +479,7 @@ async def commander_execute(run_id: int, db: DBSession, user: CurrentUser):
     return result
 
 
-@router.post("/commander/{run_id}/actions/terminate", response_model=CommanderActionResultOut, summary="작전 종료")
+@router.post("/commander/{run_id}/actions/terminate", response_model=CommanderActionResultOut, summary="작전 종료", dependencies=[Depends(require_roles("commander"))])
 async def commander_terminate(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.commander_action(run_id, "terminate")
@@ -488,7 +488,7 @@ async def commander_terminate(run_id: int, db: DBSession, user: CurrentUser):
     return result
 
 
-@router.post("/commander/{run_id}/actions/dispatch", response_model=CommanderActionResultOut, summary="임무 하달")
+@router.post("/commander/{run_id}/actions/dispatch", response_model=CommanderActionResultOut, summary="임무 하달", dependencies=[Depends(require_roles("commander"))])
 async def commander_dispatch(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.commander_action(run_id, "dispatch")
@@ -497,7 +497,7 @@ async def commander_dispatch(run_id: int, db: DBSession, user: CurrentUser):
     return result
 
 
-@router.post("/commander/{run_id}/actions/replan-route", response_model=CommanderActionResultOut, summary="경로 수정")
+@router.post("/commander/{run_id}/actions/replan-route", response_model=CommanderActionResultOut, summary="경로 수정", dependencies=[Depends(require_roles("commander"))])
 async def commander_replan_route(run_id: int, db: DBSession, user: CurrentUser):
     svc = DashboardService(db)
     result = await svc.commander_action(run_id, "replan-route")
@@ -511,6 +511,7 @@ async def commander_replan_route(run_id: int, db: DBSession, user: CurrentUser):
 @router.get(
     "/{run_id}/commander/dashboard",
     response_model=CommanderDashboardOut,
+    dependencies=[Depends(require_roles("commander"))],
     summary="지휘관 메인 화면 통합 데이터 (PDF 5페이지)",
     tags=["dashboard"],
 )
