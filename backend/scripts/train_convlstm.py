@@ -36,7 +36,7 @@ from app.weather.dataset import CHANNELS, HORIZON, LOOKBACK, TRAIN_END, Normaliz
 OUT = BACKEND / "data" / "weather"
 DOC = BACKEND.parent / "docs" / "weather_convlstm.md"
 VARS = ("rain", "t2m", "d2m", "wind", "swvl1", "fog")
-UNIT = {"rain": "mm/h", "t2m": "K", "d2m": "K", "wind": "m/s", "swvl1": "m3/m3", "fog": "(0~1)"}
+UNIT = {"rain": "mm/h", "t2m": "K", "d2m": "K", "wind": "m/s", "swvl1": "m3/m3", "fog": "확률 0~1"}
 NAME = {"rain": "강수", "t2m": "기온", "d2m": "이슬점", "wind": "풍속", "swvl1": "토양수분", "fog": "안개 확률(파생, 팀 식)"}
 
 
@@ -121,7 +121,7 @@ def render(res, cfg, hist, norm_info) -> str:
               f"## 시험 구간 결과 (창 {res['n_windows']:,}개, 육지 {res['land_cells']}칸)", "",
               "오차는 낮을수록 좋다. 판정은 일 단위 블록 부트스트랩(1,000회)으로 구한 `ConvLSTM − 기준선` MAE 차이의 95% 구간이다 (음수면 ConvLSTM 오차가 작다).", ""]
     for v in VARS:
-        lines += [f"### {NAME[v]} ({UNIT[v]}) MAE", "", "| 예측 시간 | ConvLSTM | 지속성 | 기후값 | 지속성 대비 차이 (95% 구간) | 판정 | 기후값 대비 판정 |", "|---|---|---|---|---|---|---|"]
+        lines += [f"### {NAME[v]} [{UNIT[v]}] MAE", "", "| 예측 시간 | ConvLSTM | 지속성 | 기후값 | 지속성 대비 차이 (95% 구간) | 판정 | 기후값 대비 판정 |", "|---|---|---|---|---|---|---|"]
         for f in range(HORIZON):
             d, c = res["vs_persistence"][v][f], res["vs_climatology"][v][f]
             lines.append(f"| {f + 1}시간 | {m['convlstm'][v]['mae'][f]:.4f} | {m['persistence'][v]['mae'][f]:.4f} | {m['climatology'][v]['mae'][f]:.4f} | "
@@ -133,9 +133,14 @@ def render(res, cfg, hist, norm_info) -> str:
             lines.append(f"| {label} | {f + 1}시간 | {m['convlstm'][key][f]:.3f} | {m['persistence'][key][f]:.3f} | {m['climatology'][key][f]:.3f} |")
     allp = [x for v in VARS for x in res["vs_persistence"][v]]
     cnt = {k: sum(x["verdict"] == k for x in allp) for k in ("모델 우세(뚜렷)", "기준선 우세(뚜렷)", "단정 불가")}
+    worse = [(label, f + 1, m['convlstm'][key][f], m['persistence'][key][f]) for key, label in (("rain_csi_0.1", "강수 ≥ 0.1 mm/h"), ("rain_csi_1.0", "강수 ≥ 1.0 mm/h"), ("fog_csi_0.5", "안개 확률 ≥ 0.5"))
+             for f in range(HORIZON) if m['convlstm'][key][f] < m['persistence'][key][f]]
     lines += ["", "## 요약", "",
-              f"- 지속성 대비 (6개 변수 x 3개 예측 시간 = {len(allp)}칸 중): ConvLSTM 뚜렷하게 우세 **{cnt['모델 우세(뚜렷)']}**, 지속성 뚜렷하게 우세 **{cnt['기준선 우세(뚜렷)']}**, 단정 불가 **{cnt['단정 불가']}**.",
-              "- 지속성 우세인 칸이 있으면 그대로 두고 적었다. 잔차 구조라서 \"지속성보다 나빠질 수 없다\"고 오해하기 쉬운데, 학습이 시험 구간에서 일반화하지 못하면 나빠질 수 있다.", "",
+              f"- **평균 오차(MAE)**: 지속성 대비 (6개 변수 x 3개 예측 시간 = {len(allp)}칸 중) ConvLSTM 뚜렷하게 우세 **{cnt['모델 우세(뚜렷)']}**, 지속성 뚜렷하게 우세 **{cnt['기준선 우세(뚜렷)']}**, 단정 불가 **{cnt['단정 불가']}**.",
+              (f"- **사건 탐지(CSI)는 다르다**: ConvLSTM 이 지속성보다 낮은 칸이 {len(worse)}개 있다 (" + ", ".join(f"{a} {h}시간 {c:.3f} < {b:.3f}" for a, h, c, b in worse) + "). "
+               "강한 비는 MAE로는 이기지만 탐지는 못 이기는 전형적인 모양이다: 평균제곱오차로 학습한 모델은 강한 비를 평균 쪽으로 낮게 예측해 임계(1 mm/h)를 못 넘긴다.") if worse else "- 사건 탐지(CSI)에서 지속성보다 낮은 칸은 없다.",
+              "- 판정은 일 단위 블록 부트스트랩의 95% 구간이다. 우세/열세가 있으면 그대로 두고 적었다. 잔차 구조라서 \"지속성보다 나빠질 수 없다\"고 오해하기 쉬운데, 학습이 시험 구간에서 일반화하지 못하면 나빠질 수 있고, 위 CSI 열세가 그 예다.",
+              "- 학습은 검증 손실이 아직 내려가던 16에폭에서 끝냈다 (에폭마다 학습 창의 25%만 사용, CPU 시간 한계). 더 오래 학습하면 나아질 수 있다.", "",
               "## 한계", "",
               "- 시험 구간이 2022년 하반기 6개월, 한 사례의 지역이다. 계절이 하나라는 뜻이고 다른 해에 같다고 말할 수 없다.",
               "- 격자가 10x11칸(약 11km)이라 공간 합성곱이 배울 이웃이 적다. 팀의 patch 실험(1x1 대 3x3)과 같은 한계다.",
