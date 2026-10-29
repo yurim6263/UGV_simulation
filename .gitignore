@@ -57,3 +57,6 @@ backend/data/weather/cache/
 
 # 시나리오 날짜의 ERA5 원시 기상(직접 내려받는 파일, scripts/download_era5_scenario.py)
 backend/data/weather/*.nc
+
+# OSM 도로 원자료(Overpass 에서 다시 받는다, app/geo/static_grid.py)
+backend/data/osm/

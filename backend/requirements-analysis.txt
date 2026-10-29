@@ -4,3 +4,8 @@ xarray>=2024.1.0
 netCDF4>=1.6.5
 xgboost>=2.0.0
 cdsapi            # 시나리오 날짜 ERA5 내려받기 (scripts/download_era5_scenario.py), ~/.cdsapirc 필요
+torch>=2.2            # ConvLSTM 기상 예측 (scripts/train_convlstm.py), CPU 로 충분
+rasterio>=1.3         # 정적 지형 재생성 (app/geo/static_grid.py)
+pyproj>=3.6
+shapely>=2.0
+pypdf                 # 문서 읽기(선택)
