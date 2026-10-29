@@ -25,7 +25,7 @@ export function KpiSummary({ replay, team }) {
           </em>
         </div>
       ))}
-      <p className="kpis-note">상대 고위험 구간은 순위로 나눈 등급(날씨 강도와 무관), 평균 위험도는 0~1 절대값입니다.</p>
+      <p className="kpis-note">상대 고위험 구간은 각 시점의 구역 안 순위로 나눈 등급(기준 30%, 낮을수록 위험한 칸을 피함), 평균 위험도는 0~1 절대값입니다.</p>
     </section>
   );
 }

@@ -147,7 +147,7 @@ async def get_run_summary(ctx: ToolContext, args: dict) -> dict:
         "sos_events": k["sos_events"], "sos_mobility": k["sos_mobility"], "sos_sensor": k["sos_sensor"],
         "interventions": k["interventions"], "mean_wait_minutes": round(k["wait_turns_mean"] * 10, 1),
         "red_step_pct": round(k["red_step_ratio"] * 100, 1),
-        "red_step_note": "red_step_pct 는 전 시간대 위험도 상위 30%(상대 등급 R)에서 보낸 UGV 기록 비율이다. 절대 위험이 아니다.",
+        "red_step_note": "red_step_pct 는 각 시점의 구역 안 위험도 상위 30%(상대 등급 R)에서 보낸 UGV 기록 비율이다. 30%가 무작위 기준이고 그보다 낮으면 위험한 칸을 피한 것이다. 절대 위험이 아니다.",
         "mean_risk_0_1": None if mean_risk is None else round(float(mean_risk), 3),
         "per_team": {t: {"ugv": v["ugv"], "arrived": v["arrived"], "sos": v["sos"],
                          "arrive_minutes": None if v["arrive_turn"] is None else (v["arrive_turn"] + 1) * 10}

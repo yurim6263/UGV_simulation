@@ -11,8 +11,10 @@ import AssistantPanel from "./replay/AssistantPanel";
 import FormationPanel from "./replay/FormationPanel";
 import ForecastPanel from "./replay/ForecastPanel";
 import WeatherLegend from "./replay/WeatherLegend";
+import WeatherPanel from "./replay/WeatherPanel";
 import { MODE_FOCUS, pickRow, usePlan } from "./replay/usePlan";
 import { clockText, teamLaunchTurn } from "./replay/clock";
+import { frameForTurn } from "./replay/replayModel";
 import { AgentTable, EventList, KpiSummary } from "./replay/SidePanels";
 import ParetoPanel from "./replay/ParetoPanel";
 import { ICON_SCALE, startIcon, targetIcon } from "./replay/mapMarkers";
@@ -57,12 +59,12 @@ function RiskLegend({ showRisk, onToggleRisk }) {
       <div><i style={{ background: GRADE_COLOR.G }} />G 하위 30% · 안전 (옅게)</div>
       <div><i style={{ background: GRADE_COLOR.A }} />A 중간 40% · 주의</div>
       <div><i style={{ background: GRADE_COLOR.R }} />R 상위 30% · 위험</div>
-      <small>전 시간대 기준 순위 · 날씨 강도와 무관</small>
+      <small>지금 시점의 구역 안 순위 · 날씨 강도와 무관</small>
       {open && (
         <p className="legend-help">
-          G·A·R은 작전 구역의 모든 칸과 모든 시각의 위험도를 한 줄로 세워서 나눈 <b>상대 순위</b>입니다.
-          비가 더 많이 와도 R이 늘어나지 않고, 모든 칸이 같이 위험해지면 그중 높은 쪽이 R이 됩니다.
-          실제 위험의 크기는 등급이 아니라 <b>평균 위험도(0~1)</b> 값에서 확인하세요.
+          G·A·R은 <b>지금 시점에</b> 작전 구역 안(통행 가능한 칸)의 위험도를 한 줄로 세워서 하위 30%·중간 40%·상위 30%로 나눈 <b>상대 순위</b>입니다.
+          그래서 색은 "이 시점에 구역 안에서 어디가 더 위험한가"를 보여 줍니다. 구역 전체가 같이 나빠지거나 좋아져도 비율은 그대로이므로,
+          <b>전체가 얼마나 나쁜지와 시간에 따른 변화</b>는 색이 아니라 <b>평균 위험도(0~1)</b>와 "기상" 탭에서 확인하세요.
         </p>
       )}
       {onToggleRisk && (
@@ -462,7 +464,7 @@ function MainDashboard({ account, onLogout }) {
     () => (models ? Object.fromEntries(Object.entries(models).map(([k, m]) => [k, scopedKpi(m, myTeam)])) : {}),
     [models, myTeam],
   );
-  const tabs = [["summary", "요약"], ["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"], ["pareto", "최적화"]]), ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
+  const tabs = [["summary", "요약"], ["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"], ["pareto", "최적화"]]), ["forecast", "예보"], ["weather", "기상"], ["ai", "AI 어시스턴트"]];
   const { teamModes } = replay;
   const assignText = shownTeams.map((t) => `${TEAM_UNIT[t]} ${MODE_NAME[teamModes[t]] ?? "-"}`).join(" · ");
   const assignedModes = shownTeams.map((t) => teamModes[t]);
@@ -559,7 +561,7 @@ function MainDashboard({ account, onLogout }) {
                       <span className="bar-row" title="이 제대 UGV 중 도착한 비율">
                         <small>도착</small><span className="bar"><b style={{ width: `${Math.round((pt.arrived / pt.ugv) * 100)}%`, background: TEAM_COLOR[t] }} /></span><em>{Math.round((pt.arrived / pt.ugv) * 100)}%</em>
                       </span>
-                      <span className="bar-row" title="UGV 이동 기록 중 상대 등급 R(상위 30%) 칸에서 보낸 비율">
+                      <span className="bar-row" title="UGV 이동 기록 중 그 시점의 상대 등급 R(구역 안 상위 30%) 칸에서 보낸 비율">
                         <small>고위험</small><span className="bar"><b style={{ width: `${Math.round((redByTeam[t] ?? 0) * 100)}%`, background: "var(--risk-r)" }} /></span><em>{Math.round((redByTeam[t] ?? 0) * 100)}%</em>
                       </span>
                     </span>
@@ -602,6 +604,7 @@ function MainDashboard({ account, onLogout }) {
             {tab === "formation" && model && <FormationPanel replay={replay} focusMode={uniform ?? "balance"} onPick={models?.assigned ? replay.assignAll : replay.setMode} />}
             {tab === "pareto" && <ParetoPanel onPickMode={models?.assigned ? replay.assignAll : replay.setMode} />}
             {tab === "forecast" && model && <ForecastPanel replay={replay} allowedTeams={allowedTeams} />}
+            {tab === "weather" && model && <WeatherPanel turn={Math.min(turn, 30)} onSeek={(t) => replay.seek(frameForTurn(model, t))} />}
             {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode === "assigned" ? (uniform ?? "balance") : replay.mode} />}
           </div>
         </aside>

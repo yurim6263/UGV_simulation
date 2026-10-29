@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_URL } from "../api";
+import { API_URL, GRADE_VERSION } from "../api";
 import ReplayMap from "./ReplayMap";
 import { clockText } from "./clock";
 import { GRADE_COLOR } from "./replayModel";
@@ -41,7 +41,7 @@ export default function ForecastPanel({ replay, allowedTeams }) {
   // 지도는 재생 화면과 같은 컴포넌트(경로, UGV, 유인기, 출발지, POI 아이콘)를 쓰고, 위험도 이미지만 예보로 바꾼다
   const forecastReplay = useMemo(() => ({
     ...replay,
-    overlayUrl: (k, t) => (info?.available ? `${API_URL}/api/map/forecast/${k}/${t}/${lead}.png` : BLANK),
+    overlayUrl: (k, t) => (info?.available ? `${API_URL}/api/map/forecast/${k}/${t}/${lead}.png?v=${GRADE_VERSION}` : BLANK),
   }), [replay, info, lead]);
 
   return (

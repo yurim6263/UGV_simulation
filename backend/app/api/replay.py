@@ -88,7 +88,7 @@ _MAX_OVERLAY_TURN = 30      # 실황 데이터 범위 (31개 레이어)
 
 @lru_cache(maxsize=16)
 def _overlay_setup(kind: str, scale: float):
-    """종류/강도별 턴 격자와 G/A/R 경계(전 턴 공통 30/70 분위수). 최초 1회만 계산한다."""
+    """종류/강도별 턴 격자와 **턴마다의** G/A/R 경계(그 시점 통행 가능한 칸의 30/70 분위수). 최초 1회만 계산한다."""
     from datetime import timedelta
 
     from app.simulation.shared_env import get_environment
@@ -96,8 +96,15 @@ def _overlay_setup(kind: str, scale: float):
     env = get_environment()
     grids = [np.clip(env.latest_actual_at(env.start_time + timedelta(minutes=10 * t), _OVERLAY_KINDS[kind]) * scale, 0, 1)
              for t in range(_MAX_OVERLAY_TURN + 1)]
-    lo, hi = np.percentile(np.concatenate([g[np.isfinite(g)] for g in grids]), [30, 70])
-    return grids, float(lo), float(hi)
+    return grids, [_slice_thresholds(g, env.blocked) for g in grids]
+
+
+def _slice_thresholds(grid: np.ndarray, blocked) -> tuple[float, float]:
+    ok = np.isfinite(grid) & ~np.asarray(blocked)
+    if not ok.any():
+        return 0.0, 0.0
+    lo, hi = np.percentile(grid[ok], [30, 70])
+    return float(lo), float(hi)
 
 
 @router.get("/map/overlay/{kind}/{turn}.png", summary="턴별 위험도 오버레이 이미지 (G/A/R)")
@@ -107,7 +114,8 @@ def overlay_image(kind: Literal["total", "mobility", "sensor"], turn: int, scale
 
     if not 0 <= turn <= _MAX_OVERLAY_TURN:
         raise HTTPException(status_code=404, detail=f"턴은 0~{_MAX_OVERLAY_TURN} 범위입니다.")
-    grids, lo, hi = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))
+    grids, thr = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))
+    lo, hi = thr[turn]
     buf = io.BytesIO()
     overlay_png(grids[turn], lo, hi).save(buf, format="PNG", optimize=True)
     return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
@@ -137,6 +145,14 @@ def _forecast_target(kind: str, turn: int, lead_min: int):
     return env, now, model_time, target, grid
 
 
+def _forecast_thresholds(kind: str, sc: float, turn: int, lead_min: int, grid, env) -> tuple[float, float]:
+    """예보 레이어를 등급으로 나눌 경계: 예보 대상 시각의 **실황** 레이어의 30/70 분위수 (실황 지도와 같은 기준).
+    같은 경계로 예보와 실황을 나누어야 "예보가 위험을 높게/낮게 본다"가 비율 차이로 드러난다. 실황이 없는 시각이면 예보 자체의 순위를 쓴다."""
+    _, thr = _overlay_setup(kind, sc)
+    k = turn + lead_min // 10
+    return thr[k] if 0 <= k <= _MAX_OVERLAY_TURN else _slice_thresholds(np.clip(grid * sc, 0, 1), env.blocked)
+
+
 def _grade_shares(grid, lo: float, hi: float) -> dict:
     """위험도 격자의 G/A/R 칸 비율 (데이터 없는 칸 제외). 지도 색과 같은 경계를 쓴다."""
     v = grid[np.isfinite(grid)]
@@ -160,7 +176,7 @@ def forecast_info(turn: int, lead_min: int = 60, kind: Literal["total", "mobilit
            "forecast_share": None, "actual_share": None}
     if grid is not None:
         sc = round(scale if scale is not None else _weather_scale(), 3)
-        _, lo, hi = _overlay_setup(kind, sc)
+        lo, hi = _forecast_thresholds(kind, sc, turn, lead_min, grid, env)
         out["forecast_share"] = _grade_shares(np.clip(grid * sc, 0, 1), lo, hi)
         actual = env.actual_at(target, _OVERLAY_KINDS[kind])          # 그 시각의 실제 값 (실황 데이터가 끝난 뒤면 None)
         if actual is not None:
@@ -173,10 +189,10 @@ def forecast_image(kind: Literal["total", "mobility", "sensor"], turn: int, lead
     from app.simulation.real_runner import _weather_scale
     from app.simulation.replay import overlay_png
 
-    _, _, _, _, grid = _forecast_target(kind, turn, lead_min)
+    env, _, _, _, grid = _forecast_target(kind, turn, lead_min)
     if grid is None:
         raise HTTPException(status_code=404, detail="이 시각의 예보가 없습니다.")
-    _, lo, hi = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))      # 실황 지도와 같은 등급 경계
+    lo, hi = _forecast_thresholds(kind, round(scale if scale is not None else _weather_scale(), 3), turn, lead_min, grid, env)      # 대상 시각 실황 지도와 같은 등급 경계
     buf = io.BytesIO()
     overlay_png(np.clip(grid * round(scale if scale is not None else _weather_scale(), 3), 0, 1), lo, hi).save(buf, format="PNG", optimize=True)
     return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})

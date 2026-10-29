@@ -109,15 +109,20 @@ def _planner_for(env) -> GridPlanner:
     return pl
 
 
-def risk_thresholds(env) -> tuple[float, float]:
-    """G/A/R 등급 경계: 전체 실황 종합 위험도의 30/70 분위수 (오버레이 색과 같은 기준)."""
-    cached = getattr(env, "_risk_thresholds", None)
-    if cached is None:
-        vals = np.concatenate([g[np.isfinite(g)] for g in env._actual["total"].values()])
-        lo, hi = np.percentile(vals, [30, 70])
-        cached = (float(lo), float(hi))
-        env._risk_thresholds = cached
-    return cached
+def risk_thresholds(env, t) -> tuple[float, float]:
+    """G/A/R 등급 경계: **그 시점(t)의 실황 종합 위험도**에서 통행 가능한 칸의 30/70 분위수 (오버레이 색과 같은 기준).
+
+    매 시점마다 구역 안에서 하위 30% = G, 중간 40% = A, 상위 30% = R 이다. 이전에는 5시간 전체를 한 줄로 세워서 경계를 하나로 썼는데, 위험도가
+    시간에 따라 한 방향으로 내려가는 시나리오에서는 초반이 전부 R, 후반이 전부 G 가 되어 색이 위치가 아니라 시각만 보여 줬다.
+    구역 전체가 나쁜 정도는 등급이 아니라 평균 위험도(0~1)와 기상 탭으로 본다.
+    """
+    cache = env.__dict__.setdefault("_risk_thresholds", {})
+    if t not in cache:
+        g = np.asarray(env.latest_actual_at(t, "total"))
+        ok = np.isfinite(g) & ~np.asarray(env.blocked)
+        lo, hi = np.percentile(g[ok], [30, 70]) if ok.any() else (0.0, 0.0)
+        cache[t] = (float(lo), float(hi))
+    return cache[t]
 
 
 def _dist_cells(a: tuple, b: tuple) -> float:
@@ -154,7 +159,6 @@ def run_episode(env, spec: ScenarioSpec, genes: Genes | None = None, seed: int =
     genes = genes or Genes()
     rng = np.random.default_rng(seed)
     planner = _planner_for(env)
-    lo, hi = risk_thresholds(env)
     start_time = env.start_time
     cfg = SimAlgoConfig
 
@@ -185,7 +189,8 @@ def run_episode(env, spec: ScenarioSpec, genes: Genes | None = None, seed: int =
 
     sc = float(spec.weather_scale)
 
-    def grade(total: float) -> str:
+    def grade(total: float, turn: int) -> str:
+        lo, hi = risk_thresholds(env, start_time + timedelta(minutes=10 * turn))          # 그 시점의 구역 안 상대 순위
         return "G" if total <= lo * sc else ("A" if total <= hi * sc else "R")
 
     def emit(turn: int, unit: _Unit, action: str, A_tot, A_mob, A_sen) -> None:
@@ -197,7 +202,7 @@ def run_episode(env, spec: ScenarioSpec, genes: Genes | None = None, seed: int =
             "seq_idx": seq, "turn_idx": turn, "agent_id": unit.id, "y": r, "x": c, "row": r, "col": c,
             "lat": lat, "lon": lon, "action": action, "ap": int(unit.ap),
             "normalized_c_total": tot, "c_mob_prime": float(A_mob[r, c]), "c_sen_prime": float(A_sen[r, c]),
-            "risk_grade": grade(tot),
+            "risk_grade": grade(tot, turn),
         })
         seq += 1
 

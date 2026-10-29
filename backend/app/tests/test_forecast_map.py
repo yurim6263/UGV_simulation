@@ -76,3 +76,24 @@ async def test_forecast_info_compares_grade_shares_of_forecast_and_actual_at_the
     assert none["forecast_share"] is None and none["actual_share"] is None
     last = (await client.get("/api/map/forecast-info", params={"turn": 29, "lead_min": 0, "scale": 0.3})).json()
     assert last["available"] and last["forecast_share"] and last["actual_share"]       # 발표 범위의 끝(02:50)까지는 비교할 수 있다
+
+
+def test_grades_are_ranked_within_each_time_slice_not_across_the_whole_scenario():
+    """전 시간대를 한 줄로 세우면 위험도가 시간에 따라 내려가는 시나리오에서 초반은 전부 R, 후반은 전부 G 가 된다 (색이 위치가 아니라 시각을 보여 줌)."""
+    import numpy as np
+
+    from app.api import replay as r
+    from app.simulation.algo.episode import risk_thresholds
+    from app.simulation.shared_env import get_environment
+
+    env = get_environment()
+    grids, thr = r._overlay_setup("total", 0.3)
+    ok = ~np.asarray(env.blocked)
+    for t in (0, 10, 20, 30):
+        g = grids[t][ok & np.isfinite(grids[t])]
+        lo, hi = thr[t]
+        shares = (float((g <= lo).mean()), float(((g > lo) & (g <= hi)).mean()), float((g > hi).mean()))
+        assert shares == pytest.approx((0.30, 0.40, 0.30), abs=0.02), (t, shares)               # 매 시점 30/40/30
+    assert thr[0][0] != thr[30][0] and thr[0][1] != thr[30][1]                                  # 경계는 시점마다 다르다
+    from datetime import timedelta
+    assert risk_thresholds(env, env.start_time) != risk_thresholds(env, env.start_time + timedelta(minutes=300))   # 시뮬레이션 기록의 등급도 같은 기준

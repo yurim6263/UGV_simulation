@@ -47,9 +47,24 @@ def weather_info():
     except si.WeatherUnavailable as exc:
         return {**base, "available": False, "reason": str(exc)}
     turns, outside = [], []
+    from datetime import timedelta
+
+    import numpy as np
+
+    from app.simulation.shared_env import get_environment
+
+    env = get_environment()
+    walkable = ~np.asarray(env.blocked)
+
+    def risk_mean(t: int):
+        """같은 시점의 위험도(종합) 구역 평균 (통행 가능한 칸). 기상 지표와 한 그래프에 겹쳐 그려 날씨가 위험도에 어떻게 반영되는지 보여 준다."""
+        g = np.asarray(env.latest_actual_at(env.start_time + timedelta(minutes=10 * t), "total"))
+        ok = np.isfinite(g) & walkable
+        return round(float(g[ok].mean()), 4) if ok.any() else None
+
     for t in range(MAX_TURN + 1):
         try:
-            turns.append({"turn": t, **w.area_mean(t)})
+            turns.append({"turn": t, **w.area_mean(t), "risk_total": risk_mean(t)})
         except si.WeatherUnavailable:
             turns.append(None)
             outside.append(t)
