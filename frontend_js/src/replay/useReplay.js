@@ -101,13 +101,30 @@ export function useReplay() {
     }
   }, [scenario, teamModes]);
 
+  // 모든 제대에 같은 모드를 지정한다 (모드 카드를 누를 때). 한 번의 저장과 한 번의 합성만 한다.
+  const assignAll = useCallback(async (nextMode) => {
+    if (!scenario) return;
+    const teams = Object.keys(teamModes);
+    if (teams.length && teams.every((t) => teamModes[t] === nextMode)) return;
+    setAssignError("");
+    try {
+      const saved = await setTeamModes(scenario.mission_id, Object.fromEntries(teams.map((t) => [t, nextMode])));
+      const raw = (await fetchAssigned(scenario.mission_id)).mode;
+      setTeamModesState(saved.team_modes);
+      setModels((current) => ({ ...current, assigned: buildReplay(raw) }));
+      setFrame((f) => Math.min(f, Math.max(0, raw.steps.length - 1)));
+    } catch (e) {
+      setAssignError(e.message);
+    }
+  }, [scenario, teamModes]);
+
   const toggleTeam = useCallback((team) => setTeams((t) => ({ ...t, [team]: !t[team] })), []);
 
   return useMemo(() => ({
     overlayUrl, scenario, models, model, error, unassigned, loading: !error && !unassigned && !model,
-    teamModes, assignMode, assignError,
+    teamModes, assignMode, assignAll, assignError,
     mode, setMode, overlay, setOverlay, frame, seek, lastFrame,
     playing, setPlaying, togglePlay, speed, setSpeed,
     teams, toggleTeam, selected, setSelected,
-  }), [overlayUrl, scenario, models, model, error, unassigned, teamModes, assignMode, assignError, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
+  }), [overlayUrl, scenario, models, model, error, unassigned, teamModes, assignMode, assignAll, assignError, mode, setMode, overlay, frame, seek, lastFrame, playing, togglePlay, speed, teams, toggleTeam, selected]);
 }

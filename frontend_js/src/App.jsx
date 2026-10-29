@@ -465,6 +465,8 @@ function MainDashboard({ account, onLogout }) {
   const tabs = [["summary", "요약"], ["events", "이벤트"], ["units", "UGV"], ...(myTeam ? [] : [["formation", "편성"], ["pareto", "최적화"]]), ["forecast", "예보"], ["ai", "AI 어시스턴트"]];
   const { teamModes } = replay;
   const assignText = shownTeams.map((t) => `${TEAM_UNIT[t]} ${MODE_NAME[teamModes[t]] ?? "-"}`).join(" · ");
+  const assignedModes = shownTeams.map((t) => teamModes[t]);
+  const uniform = assignedModes.length > 0 && assignedModes.every((m) => m === assignedModes[0]) ? assignedModes[0] : null;      // 모든 제대가 같은 모드면 그 모드, 섞이면 null
 
   return (
     <main className="app">
@@ -496,23 +498,24 @@ function MainDashboard({ account, onLogout }) {
           {!myTeam && (
           <section>
             <h2 className="h">임무 모드</h2>
-            {models?.assigned && (
-              <button className={`mode assigned ${replay.mode === "assigned" ? "on" : ""}`} onClick={() => replay.setMode("assigned")}>
-                <span className="n">지정 편성{replay.mode === "assigned" && <small>선택됨</small>}</span>
-                <span className="d">제대마다 지정한 모드의 기록을 합친 결과</span>
+            {models?.assigned && <p className="hint tight sub-h">모드를 누르면 <b>모든 제대에 같은 모드</b>가 지정됩니다. 제대마다 다르게 하려면 아래 "제대별 모드 지정"을 쓰세요.</p>}
+            {models?.assigned && !uniform && (
+              <div className="mode assigned on static">
+                <span className="n">혼합 편성<small>선택됨</small></span>
+                <span className="d">제대마다 다른 모드의 기록을 합친 결과</span>
                 <span className="mode-form">{assignText}</span>
                 <span className="mode-form" title="제대별 UGV 투입 대수">편성 <b className="num">{formationText(models.assigned, myTeam)}</b></span>
                 {modeKpi.assigned && <span className="m"><span>도착 <b className="num">{modeKpi.assigned.arrived}/{modeKpi.assigned.total}</b></span><span>SOS <b className="num">{modeKpi.assigned.sos}</b></span></span>}
-              </button>
+              </div>
             )}
-            {models?.assigned && <p className="hint tight sub-h">모드별 결과 (비교용)</p>}
             {MODES.map((m) => {
               const k = modeKpi[m.key];
               const focus = MODE_FOCUS[m.key];
               const row = pickRow(plan, m.key);
+              const selected = models?.assigned ? uniform === m.key : replay.mode === m.key;
               return (
-                <button key={m.key} className={`mode ${replay.mode === m.key ? "on" : ""}`} onClick={() => replay.setMode(m.key)} disabled={!model}>
-                  <span className="n">{m.label}{replay.mode === m.key && <small>선택됨</small>}</span>
+                <button key={m.key} className={`mode ${selected ? "on" : ""}`} onClick={() => (models?.assigned ? replay.assignAll(m.key) : replay.setMode(m.key))} disabled={!model}>
+                  <span className="n">{m.label}{selected && <small>선택됨</small>}</span>
                   <span className="d">{focus.desc}</span>
                   {row && <span className="focus" title={`${focus.tip} · 편성 계산의 평균(시드 ${row.seeds}개)`}>{focus.label} <b className="num">{focus.get(row)}</b></span>}
                   {models?.[m.key] && <span className="mode-form" title="제대별 UGV 투입 대수 (목표 위치에 맞게 계산)">편성 <b className="num">{formationText(models[m.key], myTeam)}</b></span>}
@@ -596,10 +599,10 @@ function MainDashboard({ account, onLogout }) {
             {model && tab === "summary" && <KpiSummary replay={replay} team={myTeam} />}
             {model && tab === "events" && <EventList replay={replay} allowedTeams={allowedTeams} />}
             {model && tab === "units" && <AgentTable replay={replay} allowedTeams={allowedTeams} />}
-            {tab === "formation" && model && <FormationPanel replay={replay} />}
-            {tab === "pareto" && <ParetoPanel onPickMode={replay.setMode} />}
+            {tab === "formation" && model && <FormationPanel replay={replay} focusMode={uniform ?? "balance"} onPick={models?.assigned ? replay.assignAll : replay.setMode} />}
+            {tab === "pareto" && <ParetoPanel onPickMode={models?.assigned ? replay.assignAll : replay.setMode} />}
             {tab === "forecast" && model && <ForecastPanel replay={replay} allowedTeams={allowedTeams} />}
-            {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode === "assigned" ? "balance" : replay.mode} />}
+            {tab === "ai" && <AssistantPanel role={account.role} mode={replay.mode === "assigned" ? (uniform ?? "balance") : replay.mode} />}
           </div>
         </aside>
       </div>

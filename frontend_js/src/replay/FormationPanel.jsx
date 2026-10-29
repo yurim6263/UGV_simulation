@@ -6,7 +6,7 @@ import { getPlan } from "../api";
 const MODES = [["balance", "균형"], ["explore", "정밀"], ["rush", "신속"]];
 const key = (f) => f.join("-");
 
-export default function FormationPanel({ replay }) {
+export default function FormationPanel({ replay, focusMode, onPick }) {
   const missionId = replay.scenario?.mission_id;
   const [state, setState] = useState({ loading: true });
   const [sort, setSort] = useState({ by: "v1", dir: -1 });
@@ -21,7 +21,7 @@ export default function FormationPanel({ replay }) {
     return () => { cancelled = true; };
   }, [missionId]);
 
-  const mode = MODES.some(([k]) => k === replay.mode) ? replay.mode : "balance";   // "지정 편성" 보기일 때는 균형 표를 보여 준다
+  const mode = focusMode ?? (MODES.some(([k]) => k === replay.mode) ? replay.mode : "balance");   // 제대 모드가 섞여 있으면 균형 표를 보여 준다
   const plan = state.plan;
   const rows = useMemo(() => {
     const cands = plan?.modes[mode]?.candidates ?? [];
@@ -48,7 +48,7 @@ export default function FormationPanel({ replay }) {
         {MODES.map(([k, label]) => {
           const p = picks[k];
           return (
-            <button key={k} className={mode === k ? "on" : ""} onClick={() => replay.setMode(k)}>
+            <button key={k} className={mode === k ? "on" : ""} onClick={() => (onPick ?? replay.setMode)(k)}>
               <small>{label}</small>
               <b>{key(p.formation)}</b>
               <span>{p.total}대 투입</span>
