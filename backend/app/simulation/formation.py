@@ -36,9 +36,10 @@ import numpy as np
 
 from app.simulation.algo.episode import Genes, ScenarioSpec
 from app.simulation.batch import Job, run_batch
+from app.simulation.algo.sim_config import SimAlgoConfig
 from app.simulation.presets import DEFAULT_POIS, MODE_PRESETS, preset
 
-PLANNER_VERSION = 2
+PLANNER_VERSION = 3          # 3: 키에 데이터셋(폴더, 시작 시각)을 넣었다
 MODES = ("balance", "explore", "rush")
 MIN_PER_TEAM, MAX_PER_TEAM = 1, 3
 MIN_ARRIVAL = 0.8
@@ -73,6 +74,15 @@ class PlanInput:
         every = itertools.product(range(self.min_per_team, self.max_per_team + 1), repeat=self.n_teams)
         return [f for f in every if sum(f) <= self.fleet]
 
+    @staticmethod
+    def dataset_id() -> str:
+        """위험도 데이터셋 식별: 폴더 이름 + 첫 실황 시각. 날씨 데이터가 바뀌면 같은 목표여도 편성 계산을 다시 해야 한다."""
+        import glob
+        import os
+
+        files = sorted(glob.glob(os.path.join(SimAlgoConfig.DYNAMIC_DIR, "actual", "*.parquet")))
+        return f"{SimAlgoConfig.DATASET}:{os.path.basename(os.path.dirname(os.path.dirname(SimAlgoConfig.DYNAMIC_DIR + os.sep)))}:{os.path.basename(files[0]) if files else '-'}"
+
     def cache_key(self) -> str:
         """같은 입력이면 같은 키. 계산 결과(편성 후보)를 다시 쓸 수 있는지 판단한다."""
         genes = {m: repr(MODE_PRESETS[m]["genes"]) for m in MODES}
@@ -81,6 +91,7 @@ class PlanInput:
             "targets": [[round(x, 5) for x in t] for t in self.targets], "patrol": list(self.patrol_sec),
             "duration": self.duration_min, "scale": round(self.weather_scale, 4), "seeds": list(self.seeds),
             "range": [self.min_per_team, self.max_per_team], "min_arrival": self.min_arrival, "genes": genes, "fleet": self.fleet,
+            "data": self.dataset_id(),
         }
         return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 

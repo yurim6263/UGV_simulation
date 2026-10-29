@@ -49,6 +49,13 @@ def test_cache_key_is_stable_and_changes_with_every_input_that_matters():
         assert changed.cache_key() != a.cache_key()
 
 
+def test_cache_key_changes_when_the_weather_dataset_changes(monkeypatch):
+    """옛 날씨에서 계산한 편성이 새 날씨 데이터에 재사용되면 안 된다 (같은 목표, 같은 설정이어도)."""
+    a = inp().cache_key()
+    monkeypatch.setattr(PlanInput, "dataset_id", staticmethod(lambda: "other-dataset"))
+    assert inp().cache_key() != a
+
+
 # ── 합성 ─────────────────────────────────────────────────────────────────
 
 def test_compose_sums_arrivals_takes_slowest_team_and_unions_coverage_and_overload():
