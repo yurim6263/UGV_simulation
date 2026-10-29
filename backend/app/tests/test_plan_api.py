@@ -95,7 +95,7 @@ async def test_run_without_a_plan_splits_the_fleet_evenly_capped_at_three_per_te
 async def test_plan_is_ignored_when_the_mission_inputs_changed_after_planning(auth_client: AsyncClient):
     mid = await new_mission(auth_client)
     await finish_plan(auth_client, mid)
-    await auth_client.post(f"/api/missions/{mid}/targets", json=[{**TARGET, "lat": 54.42, "lon": 18.36}])     # 목표를 바꿈
+    await auth_client.post(f"/api/missions/{mid}/targets", json=[{**TARGET, "lat": 54.42, "lon": 18.40}])     # 목표를 바꿈
     async with AsyncSessionLocal() as db:
         mission = await plan_service.load_mission_dict(db, mid)
     assert await plan_service.chosen_formation(mission, "balance", 0.15) is None

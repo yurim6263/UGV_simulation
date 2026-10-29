@@ -155,6 +155,17 @@ async def get_grid_map_html(
 
 
 @router.get(
+    "/map/tactical/target-check",
+    summary="목표 위치 검사 (수역, 고립된 땅, 작전 구역 밖). 핀을 놓을 때 화면이 부른다",
+)
+async def check_target_location(lat: float, lng: float):
+    from app.simulation.target_check import check_target
+
+    reason = check_target(lat, lng)
+    return {"ok": reason is None, "reason": reason}
+
+
+@router.get(
     "/map/tactical/bounds",
     summary="지도 위경도 경계 JSON",
 )

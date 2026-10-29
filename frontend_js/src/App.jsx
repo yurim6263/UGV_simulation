@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImageOverlay, MapContainer, Marker, Tooltip } from "react-leaflet";
-import { API_URL, assistantStatus, clearToken, createMission, draftMission, latestRunSet, login as apiLogin, planFormation, startRuns, waitForRuns } from "./api";
+import { API_URL, assistantStatus, checkTarget, clearToken, createMission, draftMission, latestRunSet, login as apiLogin, planFormation, startRuns, waitForRuns } from "./api";
 import { MAX_TARGETS, initialTargets, units } from "./data";
 import { useReplay } from "./replay/useReplay";
 import BaseMap from "./replay/BaseMap";
@@ -164,12 +164,12 @@ function DragTarget({ index, target, onMove, onOut }) {
       const marker = ref.current;
       if (!marker) return;
       const { lat, lng } = marker.getLatLng();
-      if (inArea(lat, lng)) {
-        onMove(index, lat, lng);
-      } else {
+      const back = (reason) => {
         marker.setLatLng([Number(latest.current.lat), Number(latest.current.lng)]);
-        onOut();
-      }
+        onOut(reason);
+      };
+      if (!inArea(lat, lng)) return back();
+      checkTarget(lat, lng).then((res) => (res.ok ? onMove(index, lat, lng) : back(res.reason)));          // 수역이면 서버가 이유를 알려 준다
     },
   }), [index, onMove, onOut]);
   return (
@@ -270,7 +270,7 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
     setFormError("");
     setTargets((current) => current.map((t, k) => (k === i ? { ...t, lat: lat.toFixed(5), lng: lng.toFixed(5) } : t)));
   }, [setTargets]);
-  const outOfArea = useCallback(() => say(`작전 구역 밖입니다. 원래 위치로 되돌렸습니다. (${AREA_TEXT})`), []);
+  const outOfArea = useCallback((reason) => say(reason ? `${reason} 원래 위치로 되돌렸습니다.` : `작전 구역 밖입니다. 원래 위치로 되돌렸습니다. (${AREA_TEXT})`), []);
   const add = () => {
     if (targets.length >= MAX_TARGETS) return;
     const base = initialTargets[targets.length];
@@ -282,9 +282,12 @@ function CommanderInputPage({ account, targets, setTargets, onSubmit, onLogout }
     setTargets((current) => current.filter((_, k) => k !== i));
   };
 
-  function submit() {
+  async function submit() {
     const bad = targets.findIndex((t) => !validPoint(t) || !inArea(Number(t.lat), Number(t.lng)));
     if (bad >= 0) return setFormError(`${bad + 1}제대 목표가 비었거나 작전 구역 밖입니다. (${AREA_TEXT})`);
+    const checks = await Promise.all(targets.map((t) => checkTarget(Number(t.lat), Number(t.lng))));          // 수역이면 그 제대는 경로가 없어 움직이지 못한다
+    const blocked = checks.findIndex((c) => !c.ok);
+    if (blocked >= 0) return setFormError(`${blocked + 1}제대 목표: ${checks[blocked].reason}`);
     setFormError("");
     onSubmit();
   }

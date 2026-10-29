@@ -150,6 +150,8 @@ export const fetchAssigned = (missionId) => request(`/api/missions/${missionId}/
 
 // 지도 표시 "기상"은 원시 기상(ERA5)으로 만든 지표 이미지, 나머지는 위험도(G/A/R) 이미지
 export const overlayUrl = (kind, turn) => (kind === "weather" ? `${API_URL}/api/map/weather/${turn}.png` : `${API_URL}/api/map/overlay/${kind}/${turn}.png`);
+// 목표 위치 검사 (수역, 고립된 땅, 구역 밖). 반환 { ok, reason }. 서버가 못 답하면 막지 않는다(실행 때 서버가 다시 검사한다).
+export const checkTarget = (lat, lng) => request(`/api/map/tactical/target-check?lat=${lat}&lng=${lng}`, { auth: false }).catch(() => ({ ok: true, reason: null }));
 export const weatherInfo = () => request("/api/map/weather/info", { auth: false });
 
 // ── AI 어시스턴트 ────────────────────────────────────────────────────────

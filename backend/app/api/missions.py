@@ -28,6 +28,8 @@ from app.db.schemas.mission import (
 )
 from app.services.dashboard_service import DashboardService
 from app.services.mission_service import MissionService
+from app.simulation.presets import DEFAULT_START
+from app.simulation.target_check import check_target
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 
@@ -82,6 +84,12 @@ async def set_targets(
     if len(body) > 3:
         raise HTTPException(status_code=422, detail="목적지는 최대 3개입니다.")
     svc = MissionService(db)
+    mission = await svc.get_mission(mission_id)
+    start = (mission.departure_lat, mission.departure_lon) if mission is not None else DEFAULT_START
+    for t in body:                                  # 수역/고립된 땅을 목표로 받으면 그 제대는 경로가 없어 가만히 서 있게 된다
+        reason = check_target(t.lat, t.lon, start)
+        if reason:
+            raise HTTPException(status_code=422, detail=f"목표 {t.seq}({t.lat:.5f}, {t.lon:.5f}): {reason}")
     return await svc.set_targets(mission_id, body)
 
 

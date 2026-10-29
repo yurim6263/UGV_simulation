@@ -128,6 +128,11 @@ def validate_proposal(args: dict) -> tuple[list[Target] | None, list[str], str |
             b = area_bounds()
             return None, [], (f"목표 {i}: ({lat}, {lon}) 은 작전 구역 밖입니다. 위도 {b['min_lat']:.3f}~{b['max_lat']:.3f}, "
                               f"경도 {b['min_lon']:.3f}~{b['max_lon']:.3f} 안이어야 합니다.")
+        from app.simulation.target_check import check_target
+
+        reason = check_target(lat, lon)
+        if reason:                                    # 구역 안이어도 수역이면 그 제대는 움직이지 못한다
+            return None, [], f"목표 {i}: ({lat}, {lon}) {reason}"
         recon = t.get("recon_minutes", DEFAULT_RECON_MIN)
         try:
             recon = int(recon)
