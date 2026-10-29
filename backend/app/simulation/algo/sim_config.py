@@ -25,11 +25,14 @@ _BASE = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )))
 
+# 20km 데이터가 들어 있는 폴더 (backend/data 아래 이름, 절대 경로도 가능). map_20km = 팀원이 만든 원본, map_20km_rebuilt = 우리가 직접 만든 것
+MAP20KM_DIR = os.getenv("MAP20KM_DIR", "map_20km")
+_MAP20 = os.path.join(_BASE, "data", MAP20KM_DIR)
+
 _DATASETS = {
     "map_20km": {
-        "terrain": os.path.join(_BASE, "data", "map_20km", "static",
-                                "Test_sim_input_200m_bbox_20km.parquet"),
-        "dynamic": os.path.join(_BASE, "data", "map_20km", "dynamic"),
+        "terrain": os.path.join(_MAP20, "static", "Test_sim_input_200m_bbox_20km.parquet"),
+        "dynamic": os.path.join(_MAP20, "dynamic"),
     },
     "map_2km": {
         "terrain": os.path.join(_BASE, "data", "map", "static",
