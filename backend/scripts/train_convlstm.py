@@ -53,9 +53,29 @@ class Batcher:
         return past, pt, ft, fut, self.mask.expand(len(idx), -1, -1, -1)
 
 
-def masked_mse(pred, target, mask):
+RAIN_BINS = (0.5, 2.0, 5.0, 8.0)                                 # 팀 노트북의 강수 임계 구간 (mm/h)
+
+
+def masked_mse(pred, target, mask, rain_w: float = 0.0, rain_stats=None):
     m = mask[:, None]                                            # (B,1,1,H,W)
-    return (((pred - target) ** 2) * m).sum() / (m.sum() * pred.shape[1] * pred.shape[2])
+    se = (pred - target) ** 2
+    if rain_w > 0:
+        # 강한 비일수록 오차를 더 무겁게 센다: 정답 강수가 임계 구간을 하나 넘을 때마다 가중치 +rain_w (강수 채널만)
+        mean, std = rain_stats
+        mm = torch.expm1(target[:, :, 0] * std + mean).clamp(min=0)                # (B,F,H,W) mm/h
+        w = 1.0 + rain_w * sum((mm >= b).float() for b in RAIN_BINS)
+        se = torch.cat([se[:, :, :1] * w[:, :, None], se[:, :, 1:]], dim=2)
+    return (se * m).sum() / (m.sum() * pred.shape[1] * pred.shape[2])
+
+
+def val_rain_skill(reg, norm, model, batcher, starts) -> dict:
+    """검증 구간의 강수 사건 탐지(CSI)와 MAE. 채택 판단은 시험 구간이 아니라 이 값으로만 한다."""
+    L, F = LOOKBACK, HORIZON
+    truth = np.stack([reg.data[s + L:s + L + F, 0] for s in starts])
+    pred = norm.decode(predict(model, batcher, starts))[:, :, 0]
+    land = reg.land
+    return {"csi_0.1": ev.csi(pred, truth, 0.1, land).tolist(), "csi_1.0": ev.csi(pred, truth, 1.0, land).tolist(),
+            "mae": np.abs(pred[..., land] - truth[..., land]).mean((0, 2)).tolist()}
 
 
 @torch.no_grad()
@@ -161,6 +181,9 @@ def main() -> None:
     ap.add_argument("--threads", type=int, default=6)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--rebuild-cache", action="store_true")
+    ap.add_argument("--rain-weight", type=float, default=0.0, help="강한 비(0.5/2/5/8 mm/h 임계를 넘을 때마다) 손실 가중치 +값. 0이면 기존과 같다")
+    ap.add_argument("--tag", default="", help="공식 모델을 덮어쓰지 않고 convlstm_<tag>.pt, convlstm_<tag>_metrics.json 으로 저장 (보고서 문서는 쓰지 않는다)")
+    ap.add_argument("--val-skill", action="store_true", help="저장된 모델(--tag 지정 시 그 태그)의 검증 구간 강수 CSI 만 출력하고 끝낸다")
     ap.add_argument("--eval-only", action="store_true", help="학습 없이 저장된 convlstm.pt 로 평가와 보고서만 다시 만든다")
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
@@ -174,6 +197,18 @@ def main() -> None:
     batcher = Batcher(enc, time_features(reg.times), reg.land)
     tr, va, te = (window_starts(reg.times, w) for w in ("train", "val", "test"))
     print(f"창 수 학습 {len(tr)} 검증 {len(va)} 시험 {len(te)}  육지 {int(reg.land.sum())}칸", flush=True)
+
+    suffix = f"_{args.tag}" if args.tag else ""
+    mean0, std0 = float(norm.mean[0]), float(norm.std[0])
+    rain_stats = (mean0, std0)
+
+    if args.val_skill:
+        ck = torch.load(OUT / f"convlstm{suffix}.pt", weights_only=False)
+        cfg = ck["config"]
+        model = Seq2SeqConvLSTM(n_phys=len(CHANNELS), hidden=tuple(cfg["hidden"]), horizon=HORIZON)
+        model.load_state_dict(ck["state"])
+        print(json.dumps(val_rain_skill(reg, norm, model, batcher, va), ensure_ascii=False))
+        return
 
     if args.eval_only:
         ck = torch.load(OUT / "convlstm.pt", weights_only=False)
@@ -197,7 +232,7 @@ def main() -> None:
         tot = n = 0
         for i in range(0, len(order), args.batch):
             past, pt, ft, fut, mask = batcher.get(order[i:i + args.batch])
-            loss = masked_mse(model(past, pt, ft, mask), fut, mask)
+            loss = masked_mse(model(past, pt, ft, mask), fut, mask, args.rain_weight, rain_stats)
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -209,7 +244,7 @@ def main() -> None:
             vl = vn = 0
             for i in range(0, len(va), 256):
                 past, pt, ft, fut, mask = batcher.get(va[i:i + 256])
-                vl += float(masked_mse(model(past, pt, ft, mask), fut, mask)) * len(past)
+                vl += float(masked_mse(model(past, pt, ft, mask), fut, mask, args.rain_weight, rain_stats)) * len(past)
                 vn += len(past)
         vl /= vn
         sched.step(vl)
@@ -224,16 +259,20 @@ def main() -> None:
                 break
     model.load_state_dict(best_state)
     hist = {"best_val": best, "best_epoch": best_ep, "seconds": time.time() - t0}
+    if args.tag:
+        hist["val_rain_skill"] = val_rain_skill(reg, norm, model, batcher, va)
+        print("검증 강수 지표:", json.dumps(hist["val_rain_skill"]), flush=True)
     OUT.mkdir(parents=True, exist_ok=True)
-    cfg = {"hidden": list(args.hidden), "frac": args.frac, "epochs": args.epochs, "epochs_run": ep, "params": params, "lookback": LOOKBACK, "horizon": HORIZON, "seed": args.seed}
-    torch.save({"state": best_state, "normalizer": norm.to_dict(), "config": cfg, "history": hist}, OUT / "convlstm.pt")
+    cfg = {"hidden": list(args.hidden), "frac": args.frac, "epochs": args.epochs, "epochs_run": ep, "params": params, "lookback": LOOKBACK, "horizon": HORIZON, "seed": args.seed, "rain_weight": args.rain_weight}
+    torch.save({"state": best_state, "normalizer": norm.to_dict(), "config": cfg, "history": hist}, OUT / f"convlstm{suffix}.pt")
 
     print("시험 구간 평가...", flush=True)
     res = evaluate(reg, norm, model, batcher, te, train_hours)
     res["config"], res["history"] = cfg, hist
-    (OUT / "convlstm_metrics.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
-    DOC.write_text(render(res, cfg, hist, norm.to_dict()), encoding="utf-8")
-    print(f"저장: {OUT / 'convlstm.pt'}, {OUT / 'convlstm_metrics.json'}, {DOC}")
+    (OUT / f"convlstm{suffix}_metrics.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    if not args.tag:
+        DOC.write_text(render(res, cfg, hist, norm.to_dict()), encoding="utf-8")
+    print(f"저장: {OUT / f'convlstm{suffix}.pt'}, {OUT / f'convlstm{suffix}_metrics.json'}")
 
 
 if __name__ == "__main__":
