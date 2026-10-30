@@ -29,6 +29,8 @@ from typing import Optional
 
 import numpy as np
 
+from app.simulation.terrain import BLOCKED_COST
+
 from app.simulation.loaders.map20km_loader import (
     _ACTUAL_DIR,
     _BASE_DIR,
@@ -114,10 +116,18 @@ def _dynamic_to_layer_out(
 
 
 def _make_mobility_layer(terrain: np.ndarray) -> MapLayerOut:
-    safe = np.where(terrain >= 99.0, 0.0, terrain)
-    max_v = safe.max()
-    normalized = (1.0 - safe / max_v).astype(np.float32) if max_v > 0 else np.zeros_like(safe)
-    return _dynamic_to_layer_out(normalized, "mobility")
+    """지형 통행 계수 → 기동 어려움(0~1). 통행 불가는 1, 계수가 클수록 1에 가깝다.
+
+    (이전에는 `1 - 비용/최대`라 비용이 높을수록 값이 낮아지는 반대 방향이었다.)
+    """
+    blocked = terrain >= BLOCKED_COST
+    passable = terrain[~blocked]
+    if passable.size and passable.max() > passable.min():
+        scaled = (terrain - passable.min()) / (passable.max() - passable.min())
+        normalized = np.where(blocked, 1.0, 0.1 + 0.8 * scaled)
+    else:
+        normalized = np.where(blocked, 1.0, 0.0)
+    return _dynamic_to_layer_out(normalized.astype(np.float32), "mobility")
 
 
 def _run_routes(run_id: int) -> list[UnitRoute]:

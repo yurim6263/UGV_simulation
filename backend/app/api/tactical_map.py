@@ -24,7 +24,7 @@ from typing import Annotated, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
-from app.api.deps import CurrentUser as _CurrentUserDep
+from app.api.deps import CurrentUser as _CurrentUserDep, run_path_guard
 from app.db.schemas.tactical_map import (
     CommanderMapOut,
     MapBaseOut,
@@ -34,6 +34,8 @@ from app.db.schemas.tactical_map import (
 from app.services import tactical_map_service as svc
 
 router = APIRouter(tags=["tactical-map"])
+# run_id 가 경로에 있는 API 만 모드 접근 검사를 건다. 미리보기(지형/위험도 이미지 등)는 <img> 가 인증 헤더를 보낼 수 없어 로그인 없이 열려 있어야 한다.
+RUN_GUARD = [Depends(run_path_guard)]
 
 CurrentUser = _CurrentUserDep  # TokenPayload (sub, role)
 
@@ -153,6 +155,17 @@ async def get_grid_map_html(
 
 
 @router.get(
+    "/map/tactical/target-check",
+    summary="목표 위치 검사 (수역, 고립된 땅, 작전 구역 밖). 핀을 놓을 때 화면이 부른다",
+)
+async def check_target_location(lat: float, lng: float):
+    from app.simulation.target_check import check_target
+
+    reason = check_target(lat, lng)
+    return {"ok": reason is None, "reason": reason}
+
+
+@router.get(
     "/map/tactical/bounds",
     summary="지도 위경도 경계 JSON",
 )
@@ -213,6 +226,7 @@ async def get_leaflet_html(
 
 @router.get(
     "/runs/{run_id}/map/base",
+    dependencies=RUN_GUARD,
     response_model=MapBaseOut,
     summary="정적 기반 레이어 조회",
 )
@@ -227,6 +241,7 @@ async def get_map_base(run_id: int, current_user: CurrentUser):
 
 @router.get(
     "/runs/{run_id}/map/layer",
+    dependencies=RUN_GUARD,
     response_model=MapLayerOut,
     summary="동적 레이어 조회 (위험도/기동성/센서)",
 )
@@ -245,6 +260,7 @@ async def get_map_layer(
 
 @router.get(
     "/runs/{run_id}/map/commander",
+    dependencies=RUN_GUARD,
     response_model=CommanderMapOut,
     summary="지휘관용 통합 맵 (모든 제대 경로 포함)",
 )
@@ -261,6 +277,7 @@ async def get_commander_map(run_id: int, current_user: CurrentUser):
 
 @router.get(
     "/runs/{run_id}/map/operator",
+    dependencies=RUN_GUARD,
     response_model=OperatorMapOut,
     summary="통제관용 통합 맵 (자기 제대 경로만 포함)",
 )

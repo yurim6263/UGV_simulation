@@ -34,9 +34,33 @@ logs/
 *.code-workspace
 
 # ── 임시/로컬 패치 스크립트 (루트에 남은 잔여물) ─────────────
-auth_integration_patch.py
-auth_router.py
-security.py
-load_grid.py
-load_weather.py
-seed_scenarios.py
+/auth_integration_patch.py
+/auth_router.py
+/load_grid.py
+/load_weather.py
+/seed_scenarios.py
+/backend/auth_integration_patch.py
+/backend/auth_router.py
+/backend/load_grid.py
+/backend/load_weather.py
+/backend/seed_scenarios.py
+
+# 최적화 중간 저장 (재현용 임시 파일)
+backend/data/optimization/*.stage1.json
+
+# 개발용 SQLite 파일
+*.db
+*.db-journal
+
+# ERA5 지역 강수 캐시 (스크립트가 다시 만든다)
+backend/data/weather/cache/
+
+# 시나리오 날짜의 ERA5 원시 기상(직접 내려받는 파일, scripts/download_era5_scenario.py)
+backend/data/weather/*.nc
+
+# OSM 도로 원자료(Overpass 에서 다시 받는다, app/geo/static_grid.py)
+backend/data/osm/
+!backend/data/weather/era5_scenario.nc
+
+# 옛 애니메이션 HTML(각 50MB대): 저장소에 올리지 않는다. 필요하면 로컬에서 다시 만든다
+frontend_*/static/animated_gar_overlay_*.html

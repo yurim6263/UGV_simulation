@@ -45,7 +45,7 @@ class ForceMixCandidateOut(ForceMixCandidateIn):
 class MissionCreate(BaseModel):
     name: str
     echelon_no: int = Field(1, ge=1, description="몇 제대인지 (1, 2, 3 …)")
-    total_ugv: int = Field(..., ge=0, le=4, description="운용 UGV 수 (0 ~ 4대)")
+    total_ugv: int = Field(..., ge=0, le=20, description="임무 전체 운용 UGV 수. 목표(제대) 수에 따라 최대 3개 제대로 나눠 편성한다")
     max_ugv_count: int | None = Field(None, ge=1, description="미입력 시 total_ugv 값 사용")
     mission_duration_min: int = Field(120, ge=1)
     departure_lat: float = Field(37.50)
@@ -55,7 +55,7 @@ class MissionCreate(BaseModel):
 class MissionPatch(BaseModel):
     name: str | None = None
     echelon_no: int | None = Field(None, ge=1)
-    total_ugv: int | None = Field(None, ge=0, le=4)
+    total_ugv: int | None = Field(None, ge=0, le=20)
     max_ugv_count: int | None = None
     mission_duration_min: int | None = None
     departure_lat: float | None = None
@@ -73,6 +73,7 @@ class MissionOut(BaseModel):
     departure_lat: float
     departure_lon: float
     status: str
+    team_modes: dict | None = None
     created_at: datetime
     updated_at: datetime
     targets: list[MissionTargetOut] = []

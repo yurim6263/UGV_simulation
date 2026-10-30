@@ -1,272 +1,266 @@
-# Five Weathers UGV Tactical Decision Support System
+# Five Weathers
 
-전술 UGV 운용을 위한 실시간 의사결정 지원 시스템입니다.  
-본 프로젝트는 임무 변수 입력, 경로 계획 비교, 실시간 상황 시각화를 통해 전술적 의사결정을 지원하는 대시보드 형태로 구현되었습니다.
+> 기상·지형 위험이 시간에 따라 변하는 환경에서 **정찰 UGV(무인지상차량) 편성과 경로를 추천**하고, 지휘관과 제대 통제관이 시뮬레이션 결과를 **로그 기반 재생 화면과 AI 어시스턴트**로 확인하는 전술 의사결정 지원 프로토타입입니다.
 
-백엔드는 **FastAPI**, 프론트엔드는 **Solara** 기반으로 구성되어 있으며, 현재는 **Mock 기반 시뮬레이션 환경**을 중심으로 동작합니다.
+![대시보드](docs/img/dashboard.png)
 
----
+실제 작전 체계가 아닙니다. 교육용 시나리오 데이터(그단스크 인근 20km, 200m 격자)로 "기상 위험을 반영한 의사결정을 데이터와 알고리즘, LLM으로 어디까지 도울 수 있는가"를 보여주는 프로젝트입니다.
 
-## Overview
-> 국방 데이터 분석 교육 과정의 최종 프로젝트로 수행한 UGV 전술 의사결정 지원 시스템입니다.
+## 이 프로젝트가 보여주는 것
 
-Five Weathers는 전술 환경에서 UGV 운용 판단을 지원하기 위한 프로토타입 시스템입니다.
+| 영역 | 내용 |
+|---|---|
+| **시뮬레이션 엔진** | 이동 시간을 행동력(AP)으로 계산하는 시간 의존 최단경로, 3제대(유인기·운용자·UGV) 운용, 고장(SOS)과 운용자 개입 |
+| **편성 계산** | 목표 위치에서 제대별 UGV 투입 대수(1~3대, 보유 9대)를 시뮬레이션으로 계산: 27가지 후보를 제대별 단독 시험의 합성으로 평가(직접 시뮬레이션과 대조 검증), 모드별 우선순위로 선택(정밀=수색 면적 최대, 신속=작전 시간 최소, 균형=수색 90% 확보 중 운용자 부담 최소) |
+| **최적화** | NSGA-II 다목적 최적화(수색 면적·작전 시간·운용자 과부하) + 새 시드 몬테카를로 검증(평균 ± 95% 신뢰구간). 모드의 전술 성향의 근거 |
+| **데이터 분석** | ERA5 강수 예측(XGBoost vs 지속성), **ConvLSTM 기상 예측(직접 구현)**, 예보의 리드타임별 오차, 실행 기록 SQL 분석 |
+| **위험도 데이터 직접 생성** | 정적 지형(WorldCover, OSM 도로), 기상 예측 ConvLSTM, 위험도(LTWR) 생성기를 이 저장소 안에서 재구현. 팀 파일과 대조해 재현율을 적고 우리 가정은 구분해 표시 → [ltwr_generation.md](docs/ltwr_generation.md) |
+| **AI 어시스턴트** | Gemini 도구 호출, 역할별 권한을 코드로 강제, 답변 숫자·인용 검증, 자연어 임무 입력, 상황 보고 자동 작성, 운용 규칙 검색(RAG), 평가 하네스 |
+| **서비스** | FastAPI + SQLAlchemy(PostgreSQL/SQLite) + JWT 역할 기반 접근, React 재생 대시보드 |
 
-주요 목표는 다음과 같습니다.
+## 핵심 결과 (정직하게)
 
-- 임무 조건 기반 시뮬레이션 실행
-- 복수 경로안 비교 및 선택 지원
-- 실시간 주요 운용 지표(KPI) 및 상태 정보 시각화
-- UI / API / 시뮬레이션 흐름 통합 검증
-- 향후 실제 알고리즘 연동을 고려한 구조 설계
+좋은 결과만 적지 않았습니다. 각 항목의 근거와 한계는 링크한 문서에 있습니다.
 
----
+- **최적화**(새 위험도에서 다시 돌린 결과): 날씨를 무시한 기준선 대비 수색 면적 개선만 95% 신뢰구간이 겹치지 않아 뚜렷합니다. 파레토 해 18개가 서로 비슷해 세 모드의 전술 차이는 작습니다. 나머지 비교(도착률, 작전 시간 등)는 점추정으로는 개선 방향이지만 **구간이 겹쳐 이득이라고 단정할 수 없습니다.** SOS 건수는 줄지 않았습니다. → [최적화 보고서](docs/optimization_report.md)
+- **강수 예측**: ERA5의 누적 강수를 시간당으로 바꾸는 기존 규칙이 가짜 강수를 만듭니다(10mm/h 초과 시간 27건 → 428건). 지역 강수 이력만 쓴 XGBoost는 지속성 기준선을 뚜렷하게 넘지 못했고, 강한 비(≥ 1mm/h)에서는 지속성이 더 낫습니다. → [기상 모델 보고서(팀 원본 데이터)](docs/weather_model_report.md) · [ConvLSTM 기상 예측](docs/weather_convlstm.md) · [위험도 직접 생성](docs/ltwr_generation.md)
+- **팀 원본 위험도 예보(map_20km)**: 발표 1시간 뒤부터 지속성 기준선보다 오차가 크고 위험을 계속 낮게 봅니다.
+- **직접 구현한 ConvLSTM**: 시험 구간(2022-07 이후)에서 평균 오차는 지속성보다 모든 변수·예측 시간에서 뚜렷하게 낫지만(18칸 중 18), **강한 비(≥1 mm/h) 탐지는 지속성보다 나쁩니다.** → [weather_convlstm.md](docs/weather_convlstm.md)
+- **직접 만든 정적 지형**: 팀 파일 대비 토지 99.6%, 품질 마스크 99.9%, 도로 99.6%(거리 오차 1.1m). 위험도 식은 원본 코드가 없어 **우리 가정**이고 팀 수치와 같지 않습니다.
+- **AP 공식 재현**: 팀원 시뮬레이터의 UGV 이동을 약 70% 정확히 재현하고 평균 오차는 3.7%입니다(나머지는 재현하지 못했습니다). → [데이터 계약](docs/data_contract.md)
+- **AI 어시스턴트**: 실제 Gemini(`gemini-3.5-flash-lite`)로 질문 11개 중 11개 통과. 다만 답변을 읽다가 점수에 안 잡힌 단위 오류("90분"을 "9분"으로 답함)를 발견해 도구를 고치고 평가에 추가했습니다. 질문이 적어 일반적인 품질이 아니라 기본 동작 확인 수준입니다. → [어시스턴트 문서](docs/assistant.md)
 
-## Tech Stack
+## 화면
 
-### Backend
-- FastAPI
-- SQLAlchemy
-- PostgreSQL
-- Alembic
-- Pydantic
-- WebSocket
+| 로그인 | 지휘관 목표 입력 |
+|---|---|
+| ![로그인](docs/img/login.png) | ![목표 입력](docs/img/input.png) |
 
-### Frontend
-- Solara
-- ipywidgets
-- ipyleaflet
-- Starlette
-- websocket-client
+상황 보고 초안(실제 Gemini 응답, 근거 번호와 숫자·인용 검증 표시):
 
-### Infra / Tools
-- Docker
-- GitHub
-- Python 3.11+
+![AI 상황 보고](docs/img/ai.png)
 
----
+지도 표시 "기상"(보라색 농도)과 우측 "기상" 탭(시간 그래프). 날씨는 구역 안에서 거의 균일해서 지도보다 그래프가 시간 변화를 잘 보여 줍니다:
 
-## Project Structure
+![기상 악영향 지도](docs/img/weather.png)
 
-```bash
-FIVE_WEATHERS/
-├── backend/
-│   ├── alembic/                # DB 마이그레이션 관리
-│   ├── app/
-│   │   ├── api/                # REST / WebSocket 엔드포인트
-│   │   ├── core/               # 설정, 보안, 로깅, WS 관리
-│   │   ├── db/                 # DB 모델, 스키마, 세션
-│   │   ├── services/           # 비즈니스 로직
-│   │   └── simulation/         # 시뮬레이션 관련 모듈
-│   ├── data/                   # 시드/실험용 데이터
-│   ├── .env.example            # 환경변수 예시
-│   ├── create_admin.py         # 관리자 계정 복구 스크립트
-│   ├── docker-compose.yml      # 백엔드 + DB 실행 구성
-│   ├── Dockerfile              # 백엔드 컨테이너 이미지 정의
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── __pycache__/
-│   ├── components/             # UI 컴포넌트
-│   ├── public/                 # 프론트엔드 공개 정적 리소스
-│   ├── services/               # API 연동 / 상태 처리
-│   ├── static/                 # 정적 시각화 파일
-│   ├── api_client.py           # API 클라이언트
-│   ├── app.py                  # Solara 메인 진입점
-│   ├── requirements.txt
-│   └── state.py                # 전역 상태 관리
-│
-├── public/                     # 루트 공개 리소스
-├── .gitignore
-├── LICENSE
-└── README.md
+![기상 탭](docs/img/weather_tab.png)
+
+- **편성 탭**(지휘관): 모드별 추천 편성(예: 2-2-2)과 후보 전체(목표 3곳이면 27가지)의 도착률·수색·작전 시간·운용자 부하를 표로 비교합니다. 목표를 바꿔 다시 실행하면 편성도 다시 계산됩니다(직접 입력한 목표는 약 1분, 기본 목표는 저장된 결과).
+- **지도 표시 "기상"**: 비, 안개 가능성, 토양수분, 바람을 하나(0~1)로 합친 "기상 악영향" 추정 지표입니다. 위험도의 85~95%는 지형 같은 고정분이라 위험도 색만으로는 날씨가 잘 안 보이기 때문에 따로 둡니다. **원시 기상(ERA5)은 월별 파일이 2018~2022년뿐이라 시나리오 날짜(2023-06-30)는 `scripts/download_era5_scenario.py`로 따로 받아 둡니다(CDS 계정 필요, 파일은 git 제외). 파일이 없으면 "표시할 수 없음"과 이유만 보입니다. 받은 자료는 시나리오 구간이 비 없는 잔잔한 밤이고 위험도의 시간 변화와 상관이 약해(0.38), 같은 날씨인지는 확인되지 않았습니다.** 가정과 한계, 자료 받는 법은 [docs/weather_index.md](docs/weather_index.md).
+- **목표 입력**: 정찰 목표를 **1~3곳** 정하고("+ 목표 추가"/"×"로 늘리고 줄입니다) 좌표와 정찰 시간을 입력합니다(**목표 1은 1제대, 목표 2는 2제대, 목표 3은 3제대가 맡습니다**). 지도의 번호 핀을 **끌어서** 위치를 정해도 되고(입력칸과 서로 연동, 작전 구역 밖으로 끌면 되돌립니다), 위경도를 직접 쓰거나 "1제대는 그디니아, 2제대는 공항 근처"처럼 **문장으로 입력하면 AI가 입력칸을 채워 줍니다**(확정은 사람이 합니다). 목표가 3곳보다 적으면 그 수만큼의 제대만 출동하고(제대당 UGV 최대 3대) 나머지 UGV와 제대는 쉽니다. 쉬는 제대의 통제관은 "배정 없음"을 봅니다. 지도 오른쪽의 "?"는 G·A·R 등급 설명이고, 버튼으로 위험등급 색칠을 숨길 수 있습니다. "시뮬레이션 실행"을 누르면, 서버가 균형·정밀·신속 3개 모드를 같은 조건으로 실행합니다(약 40초).
+- **AI 어시스턴트 탭**: 질문에 도구로 조회한 근거 `[E1]`을 붙여 답하고("AP는 어떻게 계산해?" 같은 규칙 질문은 **운용 규칙 문서를 검색해 출처와 함께** 답하며, 문서에 없으면 "없다"고 합니다), 버튼 하나로 **양식을 갖춘 상황 보고 초안**을 만듭니다. 통제관은 담당 제대 범위로만 만들어집니다.
+- **예보 탭**: 현재 시각에 이미 발표되어 있던 예보로 "현재 + 1·2·3시간 뒤" 위험도를 같은 지도 스타일로 보여주고, **같은 시각의 예보와 실제(실황)의 등급 비율을 나란히 비교**합니다(기본 데이터에서는 예보와 실황의 비율이 얼마나 다른지 한눈에 볼 수 있습니다). 예전 HTML 지도는 제거했습니다.
+- **제대별 타임라인**: 지도 아래에서 제대마다 10분 칸을 위험 등급 색으로 칠하고, SOS(마름모)와 운용자 개입(점)을 시간순으로 보여줍니다. 칸을 누르면 그 시점으로 이동합니다.
+- **대시보드**: 모드, 지도 표시(종합·기동성·센서 위험도), 제대 필터, 재생 시간, 이벤트 선택이 모두 지도 밖 패널에서 조작됩니다. 지도는 HTML 파일이 아니라 **이동 기록 로그를 읽어 그립니다.**
+- **시나리오 시각**: 상단에 데이터의 시각(예: 8/20 22:50)이 표시됩니다. 실제 현재 시각이 아니고, 시뮬레이션 데이터의 시작(기본 2022-08-20 22:00 UTC, ERA5의 실제 날씨)부터 10분 단위로 진행됩니다. 팀 원본 데이터(2023-06-30 22시 사례)는 `MAP20KM_DIR=map_20km`로 쓸 수 있습니다. 도착 시각 등은 정해진 값이 아니라 시뮬레이션 결과입니다.
+- **어두운 바탕 지도**는 인터넷이 필요하며, 끊기면 바탕 지도를 빼고 위험도·경로만 보여줍니다.
+- **위험 등급(G/A/R)은 각 시점의 구역 안 상대 순위**(그 시점 통행 가능한 칸의 하위 30% / 중간 40% / 상위 30%)입니다. 색은 "지금 구역 안에서 어디가 더 위험한가"를 보여 주고, 날씨 강도를 바꿔도 비율이 같으므로 구역 전체의 나쁨 정도와 시간 변화는 "평균 위험도" KPI와 "기상" 탭이 보여줍니다. (전 시간대를 한 줄로 세우면 초반은 전부 R, 후반은 전부 G가 되어 색이 위치가 아니라 시각을 보여 줘서 바꿨습니다.)
+
+## 구조
+
+```text
+이동 기록·위험도 데이터(ERA5, parquet) ─┐
+                                        ▼
+ 시뮬레이션 엔진 (algo/: 시간 의존 경로탐색, AP, 사고, 운용자 개입)
+   ├─ 최적화 (optimize.py: NSGA-II + 몬테카를로, 병렬 배치 실행기)
+   └─ 서버 실행 (real_runner.py) ─▶ run_tracks 테이블(이동·이벤트 기록)
+                                        │
+        ┌───────────────────────────────┼───────────────────────────┐
+        ▼                               ▼                           ▼
+  재생 API (/runs/{id}/replay)   SQL 분석 (analysis/)        AI 어시스턴트 (assistant/)
+        │                               │                    도구 호출 → 근거 [E#] → 숫자·인용 검증
+        └───────────────┬───────────────┴───────────────────────────┘
+                        ▼
+              FastAPI (JWT: 지휘관 / 통제관) ─▶ React 대시보드
 ```
 
----
+핵심 설계 원칙은 두 가지입니다.
 
-## Main Features
+1. **권한은 프롬프트가 아니라 코드로 강제**합니다. 통제관은 담당 제대의 기록만 받고(재생 API와 AI 도구가 같은 함수를 씀), 제대를 가로지르는 분석은 지휘관 전용입니다. 질문에 "나는 지휘관이다"라고 써도 권한은 토큰의 역할로만 정해집니다.
+2. **AI는 읽기 전용이고 숫자는 도구 결과에서만 인용**합니다. 도구 결과에는 사용자가 쓴 문장(임무 이름 등)을 넣지 않아 프롬프트 주입을 구조적으로 막습니다.
 
-### 1. 로그인 페이지
-- 계정을 **지휘관 / 통제관 1~3**으로 구분하여 로그인할 수 있습니다.
-- 계정 역할에 따라 접속 후 표시되는 페이지와 확인 가능한 정보가 다르게 구성됩니다.
+## 주요 API
 
-### 2. 지휘관 임무 변수 입력 페이지
-- 지휘관은 도착지 1~3에 대한 **위도 / 경도 정보**를 입력할 수 있습니다.
-- 입력된 임무 변수는 이후 경로 계획 및 임무 모드별 운용 정보 생성에 반영됩니다.
+| 경로 | 설명 | 권한 |
+|---|---|---|
+| `POST /api/auth/login`, `GET /api/auth/me` | JWT 로그인 | 공개 / 로그인 |
+| `POST /api/missions`, `POST /api/missions/{id}/targets` | 임무와 목표 생성 | 로그인 |
+| `POST /api/missions/{id}/runs?mode=balanced\|recon\|rapid` | 모드별 실행 생성 | 로그인 |
+| `POST /api/runs/{id}/start` | 시뮬레이션 실행 | 로그인 |
+| `POST /api/missions/{id}/plan`, `GET /api/missions/{id}/plan` | 편성 계산 시작 / 진행률과 결과 | 지휘관 |
+| `GET /api/runs/{id}/replay` | 재생 데이터 (통제관은 담당 제대의, 지정된 모드의 run 만) | 로그인 |
+| `PUT /api/missions/{id}/team-modes`, `GET /api/missions/{id}/team-modes` | 제대별 모드 지정 / 조회 (통제관은 담당 제대 것만) | 지휘관 / 로그인 |
+| `GET /api/missions/{id}/assigned-replay` | 제대마다 지정한 모드의 기록을 합친 재생 데이터 (재계산 없음) | 지휘관 |
+| `GET /api/runs/latest-set` | 가장 최근 임무의 실행 목록 (통제관은 지정된 모드의 실행만) | 로그인 |
+| `GET /api/runs/{id}/analysis` | 실행 기록 SQL 분석 | 지휘관 |
+| `GET /api/map/overlay/{kind}/{turn}.png` | 위험도 오버레이 이미지 | 공개 |
+| `GET /api/map/weather/info`, `GET /api/map/weather/{turn}.png` | 기상 악영향 지표(원시 기상 자료가 없으면 이유만) | 공개 |
+| `GET /api/assistant/status`, `POST /api/assistant/ask` | AI 어시스턴트 | 로그인 |
+| `POST /api/assistant/sitrep` | 상황 보고 초안 | 로그인 (통제관은 담당 제대만) |
+| `POST /api/assistant/mission-draft` | 문장 → 목표 입력값 제안 | 지휘관 |
 
-### 3. 지휘관 통합 운용 페이지
-- **임무 모드(균형 / 정밀 / 신속)** 별 경로맵을 시각화합니다.
-- 경로맵은 **종합 위험도 맵, 센서 위험도 맵, 기동성 위험도 맵**으로 구분하여 확인할 수 있습니다.
-- **이벤트 알림(SOS 요청)** 을 확인할 수 있으며, 각 UGV와 통제관의 현재 타일 상황 정보도 함께 제공합니다.
-- 임무 모드별로 각 제대의 **운용 UGV 수, 도착지 정보, 출발 예정 시각, 도착 예정 시각**을 확인할 수 있습니다.
-- 부대 전체 기준으로 **임무 성공률, 최저 성공률, 도착 UGV 수, SOS 요청 건수, 건당 대기열, 통제관 가동률** 정보를 제공합니다.
-- **지상작전 기상 위험도(LTWR)** 의 1시간 후, 2시간 후, 3시간 후 예측 맵을 제공합니다.
-- 통제관에게 임무를 하달하는 버튼을 통해, 선택한 임무 모드에 따른 데이터를 전달할 수 있습니다.
+전체 목록은 서버를 켠 뒤 `http://127.0.0.1:8001/docs`(Swagger)에서 볼 수 있습니다.
 
-### 4. 통제관 임무 브리핑 및 자산 확인 페이지
-- 각 제대별로 하달받은 임무 데이터를 확인할 수 있습니다.
-- 부대 기본 자산 현황과 각 제대의 자산 현황, 임무 관련 정보를 브리핑 형태로 제공합니다.
+## 로컬 실행
 
-### 5. 통제관 실시간 운용 페이지
-- 하달받은 **임무 모드(균형 / 정밀 / 신속)** 기준으로 경로맵을 시각화합니다.
-- 경로맵은 **종합 위험도 맵, 센서 위험도 맵, 기동성 위험도 맵**으로 나누어 확인할 수 있습니다.
-- **이벤트 알림(SOS 요청)** 과 각 UGV 및 통제관의 현재 타일 상황 정보를 확인할 수 있습니다.
-- 각 제대별 **운용 UGV 수, 도착지 정보, 출발 예정 시각, 도착 예정 시각**을 제공합니다.
-- 부대 전체 기준으로 **임무 성공률, 최저 성공률, 도착 UGV 수, SOS 요청 건수, 건당 대기열, 통제관 가동률** 정보를 제공합니다.
-- **지상작전 기상 위험도(LTWR)** 의 1시간 후, 2시간 후, 3시간 후 예측 맵을 제공합니다.
-- 하달된 임무를 확인하는 기능을 제공합니다.
+### 준비
 
----
+- Python 3.11 이상, Node.js 20 이상
+- PostgreSQL 16 또는 Docker Desktop. **PostgreSQL 없이 시험하려면 SQLite를 쓰면 됩니다.**
+- 아래 명령은 PowerShell 기준입니다. 명령 프롬프트(cmd)에서는 `Copy-Item` 대신 `copy`를, 가상환경 활성화는 `.venv\Scripts\activate`를 쓰세요.
 
-## Current Mode
+### 1. 백엔드
 
-현재 프로젝트는 **Mock 기반 시뮬레이션 모드**를 중심으로 동작합니다.
-
-- 더미 데이터 기반으로 전체 UI / API 흐름을 검증할 수 있습니다.
-- 실제 알고리즘 연동 전 단계에서 통합 테스트 및 화면 검증이 가능합니다.
-- 향후 실제 알고리즘은 `backend/app/simulation/` 하위 구조에 맞춰 확장 연동할 수 있도록 설계되었습니다.
-
-즉, 현재 버전은 **실제 알고리즘 연동 전 단계의 전술 지원 프로토타입으로, 모의 데이터를 기반으로 전체 시스템 흐름을 검증**하는 데 초점을 두고 있습니다.
-
----
-
-## Run Locally
-
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 16+
-- Git
-- Docker
-
----
-
-### 1. Backend 실행
-
-```bash
+```powershell
 cd backend
-
 python -m venv .venv
-.venv\Scripts\activate
-
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-copy .env.example .env
+Copy-Item .env.example .env
+notepad .env
 ```
 
-이후 `.env` 파일을 열어 실제 환경값을 입력합니다.
+`.env`에서 다음을 채웁니다.
 
-백엔드 서버 실행:
-
-```bash
-uvicorn app.main:app --reload
+```dotenv
+DATABASE_URL=sqlite+aiosqlite:///./demo.db       # PostgreSQL이 있다면 .env.example의 값을 환경에 맞게 수정
+JWT_SECRET_KEY=충분히_긴_임의의_문자열
+ADMIN_PASSWORD=지휘관_비밀번호
+BACKEND_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
 ```
 
-- Backend: `http://localhost:8000`
-- API Docs: `http://localhost:8000/docs`
+```powershell
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
 
----
+Docker로 DB까지 함께 실행하려면 `backend/.env`를 만든 뒤 `docker compose up -d --build`(포트 8000). 이 경우 프론트의 `VITE_API_URL`을 `http://127.0.0.1:8000`으로 지정합니다.
 
-### 2. Frontend 실행
+### 2. 프론트엔드
 
-```bash
-cd frontend
+새 창에서 실행합니다.
 
-python -m venv .venv
-.venv\Scripts\activate
+```powershell
+cd frontend_js
+npm.cmd install
+npm.cmd run dev
+```
 
+`http://127.0.0.1:5173`으로 접속합니다. 기본 API 주소는 `http://127.0.0.1:8001`입니다(`frontend_js/.env.example` 참고).
+
+### 3. 계정
+
+| 역할 | 아이디 | 비밀번호 | 볼 수 있는 것 |
+|---|---|---|---|
+| 지휘관 | `admin` | `.env`의 `ADMIN_PASSWORD` | 전체 제대, 임무 하달, SQL 분석 |
+| 통제관 | `user1`/`user2`/`user3` | 아이디와 같음 | 각각 1/2/3제대 기록만 |
+
+통제관 계정은 서버 시작 때 자동으로 만들어지며(이미 있으면 덮어쓰지 않음), 지휘관이 시뮬레이션을 끝낸 뒤에만 로그인할 수 있습니다. **이 계정들은 시연용이므로 배포할 때는 모든 비밀번호와 JWT 키를 바꿔야 합니다.**
+
+### 4. AI 어시스턴트 켜기 (선택)
+
+키가 없어도 나머지 기능은 모두 동작하고, AI 탭에는 "꺼져 있습니다"가 표시됩니다.
+
+1. https://aistudio.google.com/apikey 에서 API 키를 발급합니다.
+2. `backend/.env` 맨 아래에 추가합니다. **키는 채팅, 코드, git에 올리지 마세요.** `.env`는 git에서 제외되어 있습니다.
+   ```dotenv
+   GEMINI_API_KEY=발급받은_키
+   GEMINI_MODEL=gemini-3.5-flash-lite
+   ```
+3. 서버를 다시 시작합니다.
+
+주의:
+- 모델 이름은 시간이 지나면 바뀌거나 종료됩니다(`gemini-2.5-flash`는 신규 사용자에게 종료됨). `python scripts\list_gemini_models.py`로 내 키로 쓸 수 있는 모델을 확인하세요.
+- **무료 키는 모델당 하루 20회**까지만 호출할 수 있어 AI 질문 하루 약 10개가 한계입니다. 자주 쓰려면 결제를 켜세요.
+- 무료 키의 입력은 모델 개선에 쓰일 수 있으니 민감한 정보를 넣지 마세요.
+
+평가는 `cd backend` 후 `python scripts\eval_assistant.py --live --delay 4`(`--only <질문 id>`로 일부만). 키 없이 파이프라인만 확인하려면 `--live` 없이 실행합니다.
+
+## 데이터 생성과 분석 스크립트
+
+| 하는 일 | 실행 |
+|---|---|
+| NSGA-II 최적화 + 검증 | `python backend/scripts/run_nsga2.py --pop 20 --gens 10 --val-seeds 10 --workers 6 --out backend/data/optimization/pareto.json` (약 40~70분, 작업자당 메모리 약 180MB) |
+| 최적화 보고서 | `python backend/scripts/make_report.py` |
+| 강수 예측 학습 / 예보 오차 보고서(팀 원본 데이터) | `python backend/scripts/train_rain_model.py --era5-dir "<ERA5_land>"` → `python backend/scripts/make_weather_report.py` |
+| 정적 지형 격자 재생성(팀 파일과 대조 출력) | `python backend/scripts/build_static_grid.py` (WorldCover 타일과 인터넷 필요) |
+| ConvLSTM 기상 예측 학습·평가 | `python backend/scripts/train_convlstm.py` (CPU 약 50분, 평가만 다시: `--eval-only`) → `docs/weather_convlstm.md` |
+| 위험도 레이어(실황 31 + 예보 54) 생성 | `python backend/scripts/build_ltwr_layers.py --start 2022-08-20T22:00` |
+| 예보 오차(데이터셋별) / 기상 지표용 ERA5 조각 | `python backend/scripts/forecast_skill_report.py`, `python backend/scripts/extract_era5_scenario.py` |
+| AI 어시스턴트 평가 | `python backend/scripts/eval_assistant.py` (편성 계산까지 하므로 1분쯤 더 걸림) |
+
+- 분석 스크립트에는 추가 패키지가 필요합니다: `pip install -r backend/requirements-analysis.txt`(서버 이미지에는 들어가지 않습니다).
+- `backend/data/optimization/pareto.json`이 있으면 서버가 이 결과의 신속/정밀/균형 원형의 **전술 성향(유전자)**을 모드 설정으로 씁니다. `SIM_PRESETS=reference`로 팀원 기준 프리셋을 강제할 수 있습니다. **제대별 UGV 수(편성)는 모드에 고정되어 있지 않고** 편성 계산기가 목표 위치에서 계산합니다.
+- `python backend/scripts/precompute_formation.py`는 기본 목표의 편성 계산을 미리 해 둡니다(`backend/data/formation/default_plan.json`). 엔진이나 모드 전술이 바뀌면 다시 실행하세요.
+- 시뮬레이션 환경변수: `SIM_WEATHER_SCALE`(clear / moderate / severe 또는 0~1, 기본 moderate), `SIM_TICK_SLEEP`(턴 사이 대기 초).
+- 대시보드는 **서버가 방금 계산한 결과**만 재생합니다. 예전에 있던 "팀원 기록"과 "엔진 실행" 출처(미리 저장해 둔 고정 파일)는 목표를 바꿔도 변하지 않고 옛 고정 편성을 담고 있어서 화면, 저장본, 변환 스크립트를 모두 제거했습니다 (git 기록에는 남아 있습니다).
+
+## 프로젝트 구조
+
+```text
+five_weathers/
+├─ backend/
+│  ├─ app/
+│  │  ├─ api/          # 인증, 임무, 실행, 재생, 분석, 지도, AI 어시스턴트 API
+│  │  ├─ assistant/    # AI 어시스턴트 (도구, 에이전트 루프, 근거 검증, 문서 검색, 임무 입력, Gemini 어댑터, 평가)
+│  │  ├─ analysis/     # 실행 기록 SQL 분석
+│  │  ├─ weather/      # ERA5 로더, 강수 예측, 예보 오차 분석
+│  │  ├─ simulation/   # 엔진(algo/), 최적화, 실행기, 재생 데이터 변환
+│  │  ├─ services/     # 비즈니스 로직 (권한별 기록 조회 포함)
+│  │  ├─ db/           # 모델, 세션, 초기 계정
+│  │  └─ tests/        # 327개 테스트
+│  ├─ scripts/         # 데이터 생성·최적화·분석·평가 스크립트
+│  ├─ data/            # 위험 지도, 최적화 결과, 예보 분석 결과, 운용 규칙 문서(knowledge/)
+│  └─ alembic/         # DB 마이그레이션
+├─ frontend_js/        # React + Vite 대시보드 (현재 사용)
+├─ docs/               # 보고서와 설계 문서
+├─ frontend_solara*/   # 이전 Solara 구현 (참고용, 사용하지 않음)
+└─ README.md
+```
+
+## 환경변수
+
+`backend/.env.example`을 `backend/.env`로 복사해서 씁니다.
+
+| 변수 | 설명 |
+|---|---|
+| `DATABASE_URL` | 비동기 DB 주소 (PostgreSQL `postgresql+asyncpg://...` 또는 SQLite `sqlite+aiosqlite:///./demo.db`) |
+| `JWT_SECRET_KEY` | JWT 서명 키 (충분히 긴 임의 문자열) |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | 최초 지휘관 계정 |
+| `BACKEND_CORS_ORIGINS` | 허용할 프론트 주소 (쉼표 구분) |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | AI 어시스턴트 (선택) |
+| `ASSISTANT_RATE_LIMIT` | AI 질문 횟수 제한 (기본 `20/minute`) |
+| `PLAN_WORKERS` | 편성 계산의 병렬 작업자 수 (기본 4, 작업자당 메모리 약 180MB) |
+| `ASSET_BASE_PATH` | 지도·시뮬레이션 데이터 경로 (기본 `./data`) |
+| `MAP20KM_DIR` | 위험도 데이터 폴더(`backend/data` 아래 이름). 기본 `map_20km_rebuilt`(우리가 만든 2022-08-20 사례), `map_20km`는 팀 원본. 셸 환경변수로 지정합니다(`.env`가 아님) |
+| `WEATHER_ERA5_DIR`, `WORLDCOVER_DIR` | 원자료 위치(ERA5-Land 월별 파일, ESA WorldCover 타일). 데이터 재생성 스크립트에서만 필요 |
+
+프론트: `VITE_API_URL`(기본 `http://127.0.0.1:8001`).
+
+## 테스트
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-solara run app.py
+pytest
 ```
 
-- Frontend: `http://localhost:8765`
+327개의 테스트가 PostgreSQL이나 `.env` 없이 in-memory SQLite로 돌아갑니다(전체 약 14분, 메모리가 적으면 파일을 나눠 돌리세요). AI 어시스턴트 테스트는 실제 Gemini 대신 가짜 모델을 끼워 권한, 근거 검증, 에이전트 루프, 어댑터 변환을 검증합니다.
 
----
+## 한계
 
-## Environment Variables
+- **편성 계산은 시뮬레이션 추정**(시드 4개의 평균)이라 작은 차이는 우연일 수 있고, 제대당 1~3대만 탐색합니다. 모드의 전술 성향은 목표에 따라 바뀌지 않습니다.
+- **시나리오는 하나**입니다. 한 번의 날씨 사례(기본 2022-08-20 밤 5시간)를 강도(`weather_scale`)만 바꿔 쓰며, 사고 확률 등 일부 파라미터는 가정값입니다. 위험도 식은 팀 원본이 아니라 우리 정의입니다. 모드의 전술 성향(NSGA-II)은 새 위험도에서 다시 최적화했지만(이전 결과는 `pareto_team_map_20km.json`) 파레토 해들이 서로 비슷해 세 모드의 전술 차이는 작습니다. 실제 UGV 관제나 운영 시스템이 아닙니다.
+- 최적화의 대부분 비교는 통계적으로 구분되지 않습니다(위 핵심 결과 참고). 시뮬레이션 1회 기록과 평균 통계를 화면과 AI 답변에서 구분해 표시합니다.
+- 위험 등급은 각 시점의 상대 순위라 날씨 강도와 무관하고, 구역 안 날씨가 거의 균일(ERA5 11km 격자)해서 칸 간 차이가 작을 때는 작은 차이(지형 보정)가 3등급으로 크게 나뉘어 보입니다. 절대 크기는 평균 위험도로 보세요.
+- AI 어시스턴트의 문서 검색(RAG)은 어휘 기반(BM25)이라 같은 뜻의 다른 표현에 약할 수 있고, 검색 대상은 실제 군 교범이 아니라 이 시스템의 운용 규칙 문서입니다. 숫자·인용 검증은 휴리스틱입니다. 10 미만의 정수는 검사하지 않고, 숫자를 맞게 쓰고 의미를 틀린 경우는 못 잡습니다. 평가는 질문 11개, 가벼운 모델 한 개로만 해 봤습니다.
+- 데모 계정과 기본 비밀번호는 개발 편의를 위한 것입니다.
 
-`backend/.env.example` 파일을 `backend/.env`로 복사한 뒤 아래 항목들을 설정합니다.
+## 문서
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL 연결 문자열 | `postgresql+asyncpg://postgres:pass@localhost:5432/fiveweathersDB` |
-| `JWT_SECRET_KEY` | JWT 서명 키 | 충분히 긴 랜덤 문자열 |
-| `ADMIN_USERNAME` | 초기 관리자 계정 | `user1` |
-| `ADMIN_PASSWORD` | 초기 관리자 비밀번호 | `user1` |
-
----
-
-## Database Migration
-
-Alembic 기반 DB 마이그레이션을 사용하는 경우 예시는 다음과 같습니다.
-
-```bash
-cd backend
-alembic upgrade head
-```
-
-DB 스키마 변경 시 Alembic 마이그레이션을 통해 반영할 수 있습니다.
-
----
-
-## Admin Recovery
-
-관리자 계정 생성이 정상적으로 되지 않았을 경우 아래 명령으로 계정을 수동 생성할 수 있습니다.
-
-```bash
-cd backend
-.venv\Scripts\activate
-python create_admin.py --username user1 --password user1
-```
-
----
-
-## Docker
-
-백엔드 및 데이터베이스를 Docker 기반으로 실행하려면:
-
-```bash
-cd backend
-docker compose up -d
-```
-
-필요 시 `Dockerfile`과 `docker-compose.yml`을 기준으로 백엔드 컨테이너 환경을 구성할 수 있습니다.
-
----
-
-## Workflow
-
-본 시스템은 다음 흐름으로 사용됩니다.
-
-1. 로그인
-2. 지휘관의 임무 변수 입력
-3. 지휘관의 경로 비교 및 선택
-4. 지휘관->통제관으로 임무 하달
-5. 통제관의 임무 정보 및 경로 확인
-
-이 흐름을 통해 사용자는 임무 준비 단계부터 실시간 모니터링 단계까지 하나의 인터페이스에서 확인할 수 있습니다.
-
----
-
-## Notes
-
-- 본 프로젝트는 전술 UGV 운용 지원을 위한 프로토타입 시스템입니다.
-- 현재 일부 기능은 Mock 데이터 기반으로 동작합니다.
-- 실제 알고리즘 및 고도화된 의사결정 로직은 추후 확장 가능한 구조로 분리 설계되어 있습니다.
-- 저장소 구조는 개발 진행에 따라 지속적으로 업데이트될 수 있습니다.
-
----
-
-## My Role
-
-- FastAPI 백엔드 구조 설계 및 API 구성
-- Solara 프론트엔드 UI 구성
-- 상태 시각화 및 대시보드 흐름 설계
-- Mock 데이터 기반 시뮬레이션 통합 환경 구성
-- UGV 전술 지원 시나리오 기반 기능 구현
-
----
+- [데이터 계약과 엔진 동작](docs/data_contract.md) · [편성 계산기](docs/formation_planner.md) · [최적화 보고서](docs/optimization_report.md) · [기상 모델 보고서(팀 원본 데이터)](docs/weather_model_report.md) · [ConvLSTM 기상 예측](docs/weather_convlstm.md) · [위험도 직접 생성](docs/ltwr_generation.md) · [SQL 분석](docs/sql_analysis.md) · [AI 어시스턴트](docs/assistant.md)
 
 ## License
 
-MIT License
+MIT License. 자세한 내용은 [LICENSE](LICENSE)를 확인하십시오.

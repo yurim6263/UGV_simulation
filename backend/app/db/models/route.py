@@ -23,7 +23,7 @@ run_route_effects:
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Double, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import JSONB
+from app.db.types import JSONType
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -40,7 +40,7 @@ class RunRoute(Base):
     route_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # INITIAL | UPDATED
     reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    geojson: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    geojson: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -62,7 +62,7 @@ class RunMapLayer(Base):
     time_slot: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # T0 | T1 | T2 | T3
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    meta: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -82,7 +82,7 @@ class RunKpi(Base):
     success_rate: Mapped[float | None] = mapped_column(Double, nullable=True)
     damage_rate: Mapped[float | None] = mapped_column(Double, nullable=True)
     makespan_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    queue_kpi: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    queue_kpi: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     bottleneck_index: Mapped[float | None] = mapped_column(Double, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -105,7 +105,7 @@ class RunRecommendation(Base):
     )
     score: Mapped[float | None] = mapped_column(Double, nullable=True)
     is_selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    rationale: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    rationale: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -22,6 +22,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, default="operator"
     )  # commander | operator
+    assigned_unit: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default=None
+    )  # 통제관 담당 제대 (예: "1제대"), 지휘관은 None
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

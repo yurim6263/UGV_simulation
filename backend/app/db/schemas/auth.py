@@ -25,5 +25,6 @@ class UserOut(BaseModel):
     id: int
     username: str
     role: str
+    assigned_unit: str | None = None
 
     model_config = {"from_attributes": True}

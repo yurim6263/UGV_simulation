@@ -128,6 +128,10 @@ async def get_operator_briefing(username: str, current_user: CurrentUser):
     }
     unit_label = _unit_label_map.get(username, username)
 
+    # 통제관은 자기 제대의 브리핑만 볼 수 있다 (지휘관은 전체)
+    if current_user.role not in ("commander", "admin") and current_user.unit != unit_label:
+        raise HTTPException(status_code=403, detail="다른 제대의 브리핑은 조회할 수 없습니다.")
+
     units: dict = _mission_config.get("units", {})
     unit_raw = units.get(username)
     if unit_raw is None:

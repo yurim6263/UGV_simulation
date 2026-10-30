@@ -25,8 +25,10 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from app.simulation.terrain import DEFAULT_COST_MULT, LC_COST_MULT
+
 # ── 경로 상수 ─────────────────────────────────────────────
-_BASE_DIR = Path(__file__).resolve().parents[3] / "data" / "map_20km"
+_BASE_DIR = Path(__file__).resolve().parents[3] / "data" / os.getenv("MAP20KM_DIR", "map_20km_rebuilt")      # sim_config.MAP20KM_DIR 와 같은 폴더
 _STATIC_DIR = _BASE_DIR / "static"
 _TERRAIN_PATH = _STATIC_DIR / "Test_sim_input_200m_bbox_20km.parquet"
 _BUFFER_TIF   = _STATIC_DIR / "route_buffer_mask_5km_200m.tif"
@@ -37,18 +39,8 @@ _FORECAST_DIR = _BASE_DIR / "dynamic" / "forecast"
 GRID_NY = 111
 GRID_NX = 111
 
-# lc_code → 지형 통행 비용 (mumt_sim/src/environment.py 동일 정책)
-_LC_COST: dict[int, float] = {
-    10: 2.5,
-    20: 1.5,
-    30: 1.0,
-    40: 1.2,
-    50: 999.0,
-    60: 1.1,
-    80: 999.0,
-    90: 999.0,
-    100: 2.0,
-}
+# lc_code → 지형 통행 계수 (경로 계획용, app/simulation/terrain.py 가 단일 정의)
+_LC_COST: dict[int, float] = LC_COST_MULT
 
 # lc_code → RGBA 색상 (Leaflet 오버레이 PNG용)
 LC_COLORS_RGBA: dict[int, tuple[int, int, int, int]] = {
@@ -81,7 +73,7 @@ def _read_dynamic_grid(path: str | Path, column: str = "normalized_c_total") -> 
 
 
 def _lc_to_cost(code: float) -> float:
-    return _LC_COST.get(int(code), 1.0)
+    return _LC_COST.get(int(code), DEFAULT_COST_MULT)
 
 
 _v_lc_cost = np.vectorize(_lc_to_cost)

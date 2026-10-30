@@ -1,0 +1,217 @@
+"""
+backend/app/api/replay.py
+
+GET /api/runs/{run_id}/replay — 저장된 이동 기록(run_tracks)을 재생 화면 형식으로 반환.
+
+프론트의 재생 화면은 이 API 만 읽는다.
+통제관은 자기 제대의 기록만 받는다.
+"""
+
+import io
+from functools import lru_cache
+from typing import Literal
+
+import numpy as np
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import select
+
+from app.api.deps import CurrentUser, DBSession, require_roles
+from app.analysis.sql_reports import mode_comparison, run_report
+from app.db.models.simulation_run import SimulationRun
+from app.services.run_data import ASSIGNED_KEY, ASSIGNED_LABEL, RunDataError, build_assigned_mode, build_run_mode, load_run_data, team_modes_of
+from app.simulation.presets import DEFAULT_START
+from app.simulation.replay import MODES, grid_bounds
+
+router = APIRouter(tags=["replay"])
+
+_MODE_OF = {"balanced": "balance", "recon": "explore", "rapid": "rush"}
+
+
+@router.get("/runs/{run_id}/replay", summary="시뮬레이션 재생 데이터")
+async def get_replay(run_id: int, db: DBSession, user: CurrentUser):
+    try:
+        data = await load_run_data(db, run_id, user)           # 통제관은 자기 제대의 기록만 받는다
+        mode_data, pois = await build_run_mode(db, data)
+    except RunDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    modes = team_modes_of(data.mission)
+    if data.team is not None:                       # 통제관에게는 담당 제대의 지정 모드만 알려 준다
+        modes = {data.team: modes[data.team]}
+    return {
+        "scenario": _scenario(data.mission, pois, mode_data["kpi"]["turns"], [{"key": data.mode_key, "label": MODES[data.mode_key]}], modes),
+        "mode": mode_data,
+    }
+
+
+def _scenario(mission, pois, turns: int, modes: list[dict], team_modes: dict) -> dict:
+    from app.simulation.algo.sim_config import SimAlgoConfig
+    from app.simulation.shared_env import get_environment
+
+    meta = SimAlgoConfig.meta()
+    start_time = get_environment().start_time
+    return {
+        "start_time": start_time.isoformat() if start_time else None,      # 데이터의 시작 시각 (표준 시간대 정보 없음)
+        "turn_minutes": 10,
+        "turns": turns,
+        "bounds": grid_bounds(meta.lat, meta.lon),
+        "start": [mission.departure_lat, mission.departure_lon] if mission else list(DEFAULT_START),
+        "pois": [{"id": i + 1, "lat": p[0], "lon": p[1]} for i, p in enumerate(pois)],
+        "modes": modes,
+        "team_modes": team_modes,
+    }
+
+
+@router.get(
+    "/missions/{mission_id}/assigned-replay",
+    summary="제대마다 지정한 모드의 기록을 합친 재생 데이터 (지휘관 전용, 재계산 없음)",
+    dependencies=[Depends(require_roles("commander"))],
+)
+async def get_assigned_replay(mission_id: int, db: DBSession):
+    try:
+        mode_data, pois, mission, modes = await build_assigned_mode(db, mission_id)
+    except RunDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {
+        "scenario": _scenario(mission, pois, mode_data["kpi"]["turns"], [{"key": ASSIGNED_KEY, "label": ASSIGNED_LABEL}], modes),
+        "mode": mode_data,
+    }
+
+
+# ── 위험도 지도 이미지 (재생 화면의 오버레이) ────────────────────────────
+# <img>/Leaflet 은 인증 헤더를 보낼 수 없고, 지형·위험도 지도는 다른 지도 API(/api/map/tactical)처럼 공개 데이터다.
+
+_OVERLAY_KINDS = {"total": "total", "mobility": "mob", "sensor": "sen"}
+_MAX_OVERLAY_TURN = 30      # 실황 데이터 범위 (31개 레이어)
+
+
+@lru_cache(maxsize=16)
+def _overlay_setup(kind: str, scale: float):
+    """종류/강도별 턴 격자와 **턴마다의** G/A/R 경계(그 시점 통행 가능한 칸의 30/70 분위수). 최초 1회만 계산한다."""
+    from datetime import timedelta
+
+    from app.simulation.shared_env import get_environment
+
+    env = get_environment()
+    grids = [np.clip(env.latest_actual_at(env.start_time + timedelta(minutes=10 * t), _OVERLAY_KINDS[kind]) * scale, 0, 1)
+             for t in range(_MAX_OVERLAY_TURN + 1)]
+    return grids, [_slice_thresholds(g, env.blocked) for g in grids]
+
+
+def _slice_thresholds(grid: np.ndarray, blocked) -> tuple[float, float]:
+    ok = np.isfinite(grid) & ~np.asarray(blocked)
+    if not ok.any():
+        return 0.0, 0.0
+    lo, hi = np.percentile(grid[ok], [30, 70])
+    return float(lo), float(hi)
+
+
+@router.get("/map/overlay/{kind}/{turn}.png", summary="턴별 위험도 오버레이 이미지 (G/A/R)")
+def overlay_image(kind: Literal["total", "mobility", "sensor"], turn: int, scale: float | None = None):
+    from app.simulation.real_runner import _weather_scale
+    from app.simulation.replay import overlay_png
+
+    if not 0 <= turn <= _MAX_OVERLAY_TURN:
+        raise HTTPException(status_code=404, detail=f"턴은 0~{_MAX_OVERLAY_TURN} 범위입니다.")
+    grids, thr = _overlay_setup(kind, round(scale if scale is not None else _weather_scale(), 3))
+    lo, hi = thr[turn]
+    buf = io.BytesIO()
+    overlay_png(grids[turn], lo, hi).save(buf, format="PNG", optimize=True)
+    return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ── 예보 위험도 지도 ─────────────────────────────────────────────────────
+# 현재 시각(턴)에 이미 발표되어 있던 가장 최근 예보에서, 현재 + lead 분 뒤의 위험도를 보여준다.
+# 예보가 없는 시각을 실황이나 지속성으로 채우지 않는다 (예보가 아닌 것을 예보처럼 보이게 하지 않기 위해).
+
+_MAX_LEAD_MIN = 180
+
+
+def _forecast_target(kind: str, turn: int, lead_min: int):
+    from datetime import timedelta
+
+    from app.simulation.shared_env import get_environment
+
+    if not 0 <= turn <= _MAX_OVERLAY_TURN:
+        raise HTTPException(status_code=404, detail=f"턴은 0~{_MAX_OVERLAY_TURN} 범위입니다.")
+    if not 0 <= lead_min <= _MAX_LEAD_MIN or lead_min % 10:
+        raise HTTPException(status_code=422, detail=f"lead_min 은 0~{_MAX_LEAD_MIN} 사이의 10분 단위여야 합니다.")
+    env = get_environment()
+    now = env.start_time + timedelta(minutes=10 * turn)
+    model_time = env.model_time_at(now)
+    target = now + timedelta(minutes=lead_min)
+    grid = env.forecast_layer(_OVERLAY_KINDS[kind], model_time, target) if model_time is not None else None
+    return env, now, model_time, target, grid
+
+
+def _forecast_thresholds(kind: str, sc: float, turn: int, lead_min: int, grid, env) -> tuple[float, float]:
+    """예보 레이어를 등급으로 나눌 경계: 예보 대상 시각의 **실황** 레이어의 30/70 분위수 (실황 지도와 같은 기준).
+    같은 경계로 예보와 실황을 나누어야 "예보가 위험을 높게/낮게 본다"가 비율 차이로 드러난다. 실황이 없는 시각이면 예보 자체의 순위를 쓴다."""
+    _, thr = _overlay_setup(kind, sc)
+    k = turn + lead_min // 10
+    return thr[k] if 0 <= k <= _MAX_OVERLAY_TURN else _slice_thresholds(np.clip(grid * sc, 0, 1), env.blocked)
+
+
+def _grade_shares(grid, lo: float, hi: float) -> dict:
+    """위험도 격자의 G/A/R 칸 비율 (데이터 없는 칸 제외). 지도 색과 같은 경계를 쓴다."""
+    v = grid[np.isfinite(grid)]
+    if v.size == 0:
+        return {"G": 0.0, "A": 0.0, "R": 0.0}
+    return {"G": float((v <= lo).mean()), "A": float(((v > lo) & (v <= hi)).mean()), "R": float((v > hi).mean())}
+
+
+@router.get("/map/forecast-info", summary="예보 지도의 발표 시각/대상 시각, 예보 존재 여부, 예보와 실황의 등급 비율")
+def forecast_info(turn: int, lead_min: int = 60, kind: Literal["total", "mobility", "sensor"] = "total", scale: float | None = None):
+    from app.simulation.real_runner import _weather_scale
+
+    env, now, model_time, target, grid = _forecast_target(kind, turn, lead_min)
+    reason = None
+    if model_time is None:
+        reason = "이 시각 이전에 발표된 예보가 없습니다."
+    elif grid is None:
+        reason = "이 발표의 예보 범위(발표 후 3시간)를 벗어난 시각입니다."
+    out = {"current_time": now.isoformat(), "model_time": model_time.isoformat() if model_time else None,
+           "target_time": target.isoformat(), "lead_min": lead_min, "available": grid is not None, "reason": reason,
+           "forecast_share": None, "actual_share": None}
+    if grid is not None:
+        sc = round(scale if scale is not None else _weather_scale(), 3)
+        lo, hi = _forecast_thresholds(kind, sc, turn, lead_min, grid, env)
+        out["forecast_share"] = _grade_shares(np.clip(grid * sc, 0, 1), lo, hi)
+        actual = env.actual_at(target, _OVERLAY_KINDS[kind])          # 그 시각의 실제 값 (실황 데이터가 끝난 뒤면 None)
+        if actual is not None:
+            out["actual_share"] = _grade_shares(np.clip(actual * sc, 0, 1), lo, hi)
+    return out
+
+
+@router.get("/map/forecast/{kind}/{turn}/{lead_min}.png", summary="예보 위험도 오버레이 이미지 (G/A/R)")
+def forecast_image(kind: Literal["total", "mobility", "sensor"], turn: int, lead_min: int, scale: float | None = None):
+    from app.simulation.real_runner import _weather_scale
+    from app.simulation.replay import overlay_png
+
+    env, _, _, _, grid = _forecast_target(kind, turn, lead_min)
+    if grid is None:
+        raise HTTPException(status_code=404, detail="이 시각의 예보가 없습니다.")
+    lo, hi = _forecast_thresholds(kind, round(scale if scale is not None else _weather_scale(), 3), turn, lead_min, grid, env)      # 대상 시각 실황 지도와 같은 등급 경계
+    buf = io.BytesIO()
+    overlay_png(np.clip(grid * round(scale if scale is not None else _weather_scale(), 3), 0, 1), lo, hi).save(buf, format="PNG", optimize=True)
+    return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ── 실행 기록 SQL 분석 ───────────────────────────────────────────────────
+
+@router.get(
+    "/runs/{run_id}/analysis",
+    summary="실행 기록 SQL 분석 (SOS, 개입 대기, 대기열, 위험 구간, 모드 비교)",
+    dependencies=[Depends(require_roles("commander"))],
+)
+async def run_analysis(run_id: int, db: DBSession):
+    """지휘관 전용(전체 제대를 가로지르는 집계). 쿼리는 app/analysis/sql_reports.py 에 있다."""
+    run = await db.get(SimulationRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
+    report = await run_report(db, run_id)
+    if not report["queue_by_turn"]:
+        raise HTTPException(status_code=404, detail="아직 저장된 이동 기록이 없습니다.")
+    report["mode_comparison"] = await mode_comparison(db, run.mission_id)
+    return report

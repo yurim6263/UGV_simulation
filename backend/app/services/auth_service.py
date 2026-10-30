@@ -22,7 +22,9 @@ class AuthService:
         user = result.scalar_one_or_none()
         if user is None or not verify_password(password, user.password_hash):
             return None
-        return create_access_token(subject=str(user.id), role=user.role)
+        return create_access_token(
+            subject=str(user.id), role=user.role, unit=user.assigned_unit
+        )
 
     async def get_user_by_username(self, username: str) -> User | None:
         result = await self.db.execute(select(User).where(User.username == username))

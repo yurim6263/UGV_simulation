@@ -38,8 +38,8 @@ async def test_set_targets(auth_client: AsyncClient, mission_id: int):
     resp = await auth_client.post(
         f"/api/missions/{mission_id}/targets",
         json=[
-            {"seq": 1, "lat": 37.6, "lon": 127.1},
-            {"seq": 2, "lat": 37.7, "lon": 127.2},
+            {"seq": 1, "lat": 54.40, "lon": 18.54},        # 작전 구역(그단스크 인근)의 육지여야 한다 (수역/구역 밖은 422)
+            {"seq": 2, "lat": 54.33, "lon": 18.36},
         ],
     )
     assert resp.status_code == 201

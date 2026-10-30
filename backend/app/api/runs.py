@@ -9,13 +9,19 @@ POST /api/runs/{run_id}/start          — run 시작
 POST /api/runs/{run_id}/cancel         — run 취소
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DBSession, require_roles
-from app.db.schemas.simulation import RunOut
+from app.api.deps import CurrentUser, DBSession, require_roles, run_path_guard
+from app.db.models.simulation_run import SimulationRun
+from app.db.schemas.simulation import RunOut, RunSetItem, RunSetOut
+from app.services.run_data import COMMANDER_ROLES, MODE_OF, team_modes_of, team_scope
 from app.services.simulation_service import SimulationService
+from app.db.models.mission import Mission
 
-router = APIRouter(tags=["runs"])
+router = APIRouter(tags=["runs"], dependencies=[Depends(run_path_guard)])
 
 
 @router.post(
@@ -24,12 +30,42 @@ router = APIRouter(tags=["runs"])
     status_code=201,
     summary="시뮬레이션 run 생성",
 )
-async def create_run(mission_id: int, db: DBSession, user: CurrentUser):
+async def create_run(
+    mission_id: int, db: DBSession, user: CurrentUser,
+    mode: Literal["balanced", "recon", "rapid"] | None = None,
+):
+    """mode: 균형(balanced) / 정밀(recon) / 신속(rapid). 생략하면 균형."""
     svc = SimulationService(db)
-    run = await svc.create_run(mission_id)
+    run = await svc.create_run(mission_id, mode)
     if run is None:
         raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
     return run
+
+
+@router.get("/runs/latest-set", response_model=RunSetOut, summary="가장 최근 임무의 실행 목록 (모드별)")
+async def latest_run_set(db: DBSession, user: CurrentUser):
+    """지휘관이 마지막으로 실행한 임무의 run 들을 돌려준다. 통제관은 이것으로 같은 결과를 이어서 본다.
+    실행이 하나도 없으면 404."""
+    latest = (await db.execute(
+        select(SimulationRun.mission_id).order_by(SimulationRun.id.desc()).limit(1)
+    )).scalar_one_or_none()
+    if latest is None:
+        raise HTTPException(status_code=404, detail="아직 실행된 시뮬레이션이 없습니다.")
+    runs = (await db.execute(
+        select(SimulationRun).where(SimulationRun.mission_id == latest).order_by(SimulationRun.id)
+    )).scalars().all()
+    modes = team_modes_of(await db.get(Mission, latest))
+    shown = runs
+    if user.role not in COMMANDER_ROLES:               # 통제관에게는 담당 제대에 지정된 모드의 실행만 알려 준다
+        team = team_scope(user)
+        shown = [r for r in runs if MODE_OF.get(r.selected_mode or "balanced", "balance") == modes[team]]
+        modes = {team: modes[team]}
+    return RunSetOut(
+        mission_id=latest,
+        runs=[RunSetItem(id=r.id, mode=r.selected_mode or "balanced", status=r.status, progress_pct=r.progress_pct) for r in shown],
+        all_completed=all(r.status == "COMPLETED" for r in runs),
+        team_modes=modes,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=RunOut, summary="run 조회")
@@ -51,10 +87,12 @@ async def start_run(
     run_id: int, db: DBSession, user: CurrentUser, background_tasks: BackgroundTasks
 ):
     svc = SimulationService(db)
-    run = await svc.start_run(run_id, background_tasks)
-    if run is None:
+    existing = await svc.get_run(run_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="run을 찾을 수 없습니다.")
-    return run
+    if existing.status != "CREATED":       # 이미 시작/종료된 run 을 다시 시작하면 기록이 중복된다
+        raise HTTPException(status_code=409, detail=f"이미 {existing.status} 상태인 run 입니다.")
+    return await svc.start_run(run_id, background_tasks)
 
 
 @router.post(

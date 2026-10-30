@@ -1,0 +1,34 @@
+{
+ "generator": "scripts/build_ltwr_layers.py",
+ "start_utc": "2022-08-20T22:00",
+ "created": "2026-10-29T12:05:07",
+ "weather": "ERA5-Land hourly 0.1deg (actual), ConvLSTM data/weather/convlstm.pt (forecast leads 1-3h)",
+ "cells": 12321,
+ "forecast": [
+  {
+   "issue": "20220820_2200",
+   "files": 18,
+   "total_mean_first_last": [
+    0.821,
+    0.586
+   ]
+  },
+  {
+   "issue": "20220820_2300",
+   "files": 18,
+   "total_mean_first_last": [
+    0.769,
+    0.569
+   ]
+  },
+  {
+   "issue": "20220821_0000",
+   "files": 18,
+   "total_mean_first_last": [
+    0.61,
+    0.511
+   ]
+  }
+ ],
+ "note": "팀 원본 LTWR 생성 코드가 없어 app/weather/ltwr.py 의 우리 정의로 만든 값이다. 팀 결과보고서의 수치와 같지 않다."
+}
